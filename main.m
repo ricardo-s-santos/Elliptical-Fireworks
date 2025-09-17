@@ -7,7 +7,7 @@ tic
 M = 1; % Number of targets
 N = 4; % Number of a_i
 K = 10; % Number of measurement samples
-Border = 100; % Length of volume of interest
+Border = 10; % Length of volume of interest
 sigma_i = 10^-6; % Noise STD in for distance measurements in meters
 
 Ts = 1; % Time sample in seconds
@@ -28,7 +28,7 @@ Q = q * [[(delta_t^3)/3, 0, (delta_t^2)/2, 0];
 
 a_i = [[0; 0], [0; Border], [Border/2; 0], [Border/2; Border]];
 
-MC = 1; % Monte Carlo runs
+MC = 100; % Monte Carlo runs
 RMSE = []; % Root mean square error
 BIAS = []; % Bias of the estimator
 CDF = []; % Cumulative distributed function
@@ -46,29 +46,27 @@ counter = 1;
 while (counter - not_feasible) <= MC
     qq = 1; % Target location counter
     ww = 1;
-    x_true = [10; 10];
+    x_true = [1; 1];
     x_est = zeros(2,1);
 
     while ww <= N_dest
         RMSE_goal = [];
-        while norm(x_destination(1:2,ww) - x_est(1:2,end) ) > 1
-
+        while norm(x_destination(1:2,ww) - x_est(1:2,end)) > 1
             %--------------------%
             %- Get measurements -%
             %--------------------%
             x = x_true(:, end);
-            d_ik = sqrt( (x(1,1) - a_i(1,:)).^2 + (x(2,1) - a_i(2,:)).^2 )' + sigma_i * randn(N,K);
-
+            d_ik = sqrt((x(1,1) - a_i(1,:)).^2 + (x(2,1) - a_i(2,:)).^2 )' + sigma_i * randn(N,K);
+            d_i = median(d_ik,2);
             %-------------------%
             %- Estimation part -%
             %-------------------%
-            d_i = median(d_ik,2);
             d_weight_ij = []; % Average distance between x and a_i and between x and a_j to form weights
             u_ij = []; % Unit vector between a_i and a_j (@ a_i)
             for ii = 1 : 1 : N-1
                 for jj = ii+1 : 1 : N
                     u_ij = [u_ij, (a_i(:,jj) - a_i(:,ii))/norm((a_i(:,jj) - a_i(:,ii)))];
-                    d_weight_ij = [d_weight_ij; ii, jj, ( d_i(ii) + d_i(jj) )/2];
+                    d_weight_ij = [d_weight_ij; ii, jj, (d_i(ii) + d_i(jj))/2];
                 end
             end
             w_ij = (1./d_weight_ij(:,3))./(sum(1./d_weight_ij(:,3))); % Weights
@@ -78,11 +76,7 @@ while (counter - not_feasible) <= MC
                 ii = d_weight_ij(tt,1);
                 jj = d_weight_ij(tt,2);
                 A1 = [A1; 2 *(norm(a_i(:,ii) - a_i(:,jj)) * u_ij(:,tt) + a_i(:,ii))', -1];
-                % A1 = [A1; 2 *(norm(a_i(:,ii) - a_i(:,jj)) * u_ij(:,tt) - a_i(:,jj))', 1];
-                % A1 = [A1; 2 *(a_i(:,ii) + a_i(:,jj))', -2];
                 b1 = [b1; norm(a_i(:,ii) - a_i(:,jj))^2 - d_i(jj)^2 + 2 * norm(a_i(:,ii) - a_i(:,jj)) * u_ij(:,tt)' * a_i(:,ii) + norm(a_i(:,ii))^2];
-                % b1 = [b1; norm(a_i(:,ii) - a_i(:,jj))^2 + d_i(ii)^2 + 2 * norm(a_i(:,ii) - a_i(:,jj)) * u_ij(:,tt)' * a_i(:,ii) - norm(a_i(:,jj))^2];
-                % b1 = [b1; norm(a_i(:,ii) - a_i(:,jj))^2 - d_i(ii)^2 - d_i(jj)^2 + 2 * a_i(:,ii)' * a_i(:,jj)];
             end
             W = diag(sqrt(w_ij')); % Weight matrix
             % W = eye(size(d_weight_ij,1)); % If no weights are employed
@@ -90,7 +84,6 @@ while (counter - not_feasible) <= MC
             b = W * b1;
             D = eye(size(x,1)+1); D(size(x,1)+1,size(x,1)+1) = 0;
             f = [zeros(size(x,1),1); -1/2];
-
             % Using prediction
             if qq ~= 1
                 P_pred = S * P * S' + Q;
@@ -98,6 +91,8 @@ while (counter - not_feasible) <= MC
                 A1_track = [];
                 b1_track = [];
                 for tt = 1 : 1 : N
+                    ii = d_weight_ij(tt,1);
+                    jj = d_weight_ij(tt,2);
                     % Updated A1_track
                     A1_track = [A1_track; 2 *(norm(a_i(:,ii) - a_i(:,jj)) * u_ij(:,tt) + a_i(:,ii))' zeros(1,size(x,1)) -1];
                     b1_track = [b1_track; norm(a_i(:,ii) - a_i(:,jj))^2 - d_i(jj)^2 + 2 * norm(a_i(:,ii) - a_i(:,jj)) * u_ij(:,tt)' * a_i(:,ii) + norm(a_i(:,ii))^2];
@@ -110,11 +105,9 @@ while (counter - not_feasible) <= MC
                 A_track = W_track * A1_track;
                 b_track = W_track * b1_track;
             end
-
-  
             % First iteraction uses the estimation only
             if qq == 1
-                eigen_values = eig( (A'*A)^(1/2) \ D / (A'*A)^(1/2) );
+                eigen_values = eig((A'*A)^(1/2) \ D / (A'*A)^(1/2));
                 eig_1 = max(eigen_values);
                 min_lim = -1/eig_1; % Lower limit for the considered interval
                 max_lim = 1e6; % Upper limit for the considered interval
@@ -126,34 +119,35 @@ while (counter - not_feasible) <= MC
                 x_state(:,qq) = [x_est(:,qq); 0; 0]; % Initial target estimation obtained by solving the localization problem
                 P = eye(4);
             else % Use prediction
-                eigen_values = eig( (A_track'*A_track)^(1/2) \ D_track / (A_track'*A_track)^(1/2) );
+                eigen_values = eig((A_track'*A_track)^(1/2) \ D_track / (A_track'*A_track)^(1/2));
                 eig_1 = max(eigen_values);
+                min_lim = -1/eig_1; % Lower limit for the considered interval
                 lambda_track = bisection_fun(min_lim, max_lim, tol, N_iter, A_track, D_track, b_track, f_track); % I am calling the bisection function
                 y_hat_track = (A_track' * A_track + lambda_track * D_track + 1e-6 * eye(size(A_track,2))) \ (A_track' * b_track - lambda_track * f_track); % Adding regularization term to avoind matrix singularity
+                x_est(:, qq) = y_hat_track(1:size(x,1),1);
                 x_state(:,qq) = real(y_hat_track(1:size(x_state,1)));
                 P = (x_state(:,qq) - x_state(:,qq-1) ) * ( x_state(:,qq) - x_state(:,qq-1) )';
             end
-            
-            %---------------------%
-            %- Move Target -%
-            %---------------------%
-            uav_velocity = velocity(x_state(1:2,qq),x_destination(1:2,ww));
+            %------------------------------%
+            %- Move Target using velocity -%
+            %------------------------------%
+            uav_velocity = velocity(x_est(1:2,qq),x_destination(1:2,ww));
             x_true(1,qq+1) = x_true(1,qq) + uav_velocity(1);
             x_true(2,qq+1) = x_true(2,qq) + uav_velocity(2);
-
             %---------------------%
             %- Error Calculation -%
             %---------------------%
-            % if sum(sum(isnan(x_est))) >= 1 || sum(sum(isinf(x_est))) >= 1
-            %     not_feasible = not_feasible + 1;
-            % else
-            %     RMSE_i = RMSE_i + (x - x_est)' * (x - x_est);
-            %     BIAS_i = BIAS_i + (x_est - x);
-            %     CDF_i = [CDF_i; norm(x - x_est)/M];
-            % end
+            if sum(sum(isnan(x_est))) >= 1 || sum(sum(isinf(x_est))) >= 1
+                not_feasible = not_feasible + 1;
+            else
+                RMSE_i = RMSE_i + (x - x_est(:,qq))' * (x - x_est(:,qq));
+                BIAS_i = BIAS_i + (x_est(:,qq) - x);
+                CDF_i = [CDF_i; norm(x - x_est(:,qq))/M];
+            end
             qq = qq + 1;
             counter = counter + 1;
         end
+        ww = ww + 1;
     end
 end % while (counter - not_feasible) <= MC
 
@@ -162,8 +156,4 @@ BIAS = [BIAS, norm( BIAS_i/MC, 1 )];
 CDF = [CDF, CDF_i];
 % [h,stats] = cdfplot(CDF(:,end)); % Plots the CDF and gives stats
 not_feasible_tot = [not_feasible_tot; not_feasible];
-
-% fName = strcat('LC_GTRS_2D_var_N_sigma',int2str(sigma_i),'_K',int2str(K),'_B',int2str(Border),'_MC',int2str(MC));
-% save(fName)
-
 toc
