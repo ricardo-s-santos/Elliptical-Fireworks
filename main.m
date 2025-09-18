@@ -87,7 +87,7 @@ while (counter - not_feasible) <= MC
             % Using prediction
             if qq ~= 1
                 P_pred = S * P * S' + Q;
-                x_pred = S * x_state(:, qq-1);
+                x_pred = S * x_state(:, end);
                 A1_track = [];
                 b1_track = [];
                 for tt = 1 : 1 : N
@@ -127,6 +127,33 @@ while (counter - not_feasible) <= MC
                 x_est(:, qq) = y_hat_track(1:size(x,1),1);
                 x_state(:,qq) = real(y_hat_track(1:size(x_state,1)));
                 P = (x_state(:,qq) - x_state(:,qq-1) ) * ( x_state(:,qq) - x_state(:,qq-1) )';
+
+                % Fireworks part
+                figure
+                hold on
+                theta = atan2(x_pred(2) - x_est(2,end), x_pred(1) - x_est(1,end)); % Computing the angle of movement                
+                center = x_est(:,end); % Center of the ellipse
+                r_max = norm(x_est(:,end) - x_pred(1:2)); % Minor axis length
+                d = norm(x_est(:,end-1) - x_pred(1:2)); % Major axis length
+                tt = 0 : pi/100 : 2 * pi;
+                x_ellipse = center(1) + d/2 * cos(tt) * cos(theta) - r_max/2 * sin(tt) * sin(theta);
+                y_ellipse = center(2) + r_max/2 * sin(tt) * cos(theta) + d/2 * cos(tt) * sin(theta);
+                plot(x_ellipse, y_ellipse, 'b')
+                plot(x_est(1,end), x_est(2,end), 'rx')
+                plot(x_pred(1), x_pred(2), 'ro')
+
+                nPoints = 1e3;
+                pointsInEllipse = 0;
+                %while (pointsInEllipse < nPoints)
+                    points_tot = center + d * rand(2, nPoints) - d/2 * ones(2, nPoints); % Generating random points within a square region
+                    plot(points_tot(1,:), points_tot(2,:),'ys')
+                    inEllipse = ((points_tot(1,:) - center(1)) * cos(theta) + (points_tot(2,:) - center(2)) ...
+                        * sin(theta)).^2/(d/2)^2 + (-(points_tot(1,:)-center(1)) * sin(theta) + (points_tot(2,:) - center(2)) ...
+                        * cos(theta)).^2/(r_max/2)^2 <= 1; % Determining points inside the ellipse
+              %      pointsInEllipse = sum(inEllipse);
+              %      gg = 0;
+              %  end
+                plot(points_tot(1,inEllipse), points_tot(2,inEllipse),'g*')
             end
             %------------------------------%
             %- Move Target using velocity -%
