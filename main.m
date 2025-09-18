@@ -152,8 +152,9 @@ while (counter - not_feasible) <= MC
                         * cos(theta)).^2/(r_max/2)^2 <= 1; % Determining points inside the ellipse
               %      pointsInEllipse = sum(inEllipse);
               %      gg = 0;
-              %  end
+              % end
                 plot(points_tot(1,inEllipse), points_tot(2,inEllipse),'g*')
+                
             end
             %------------------------------%
             %- Move Target using velocity -%

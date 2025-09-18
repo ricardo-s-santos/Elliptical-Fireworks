@@ -1,6 +1,4 @@
 function [ velocity ] = velocity( currentPosition, goalPosition )
-%VELOCITY Summary of this function goes here
-%   Detailed explanation goes here
     paramMaxVelocity = 2;
     paramReachDistance = 4;
     paramSmoothFactor = 2;
