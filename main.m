@@ -132,8 +132,8 @@ while (counter - not_feasible) <= MC
                 %-------------------%
                 %- Fireworks part -%
                 %-------------------%
-                figure
-                hold on
+                % figure
+                % hold on
                 theta = atan2(x_pred(2) - x_est(2,end), x_pred(1) - x_est(1,end)); % Computing the angle of movement
                 center = x_est(:,end); % Center of the ellipse
                 r_max = norm(x_est(:,end) - x_est(:,end-1)); % Minor axis length
@@ -141,10 +141,10 @@ while (counter - not_feasible) <= MC
                 tt = 0 : pi/100 : 2 * pi;
                 x_ellipse = center(1) + d/2 * cos(tt) * cos(theta) - r_max/2 * sin(tt) * sin(theta);
                 y_ellipse = center(2) + r_max/2 * sin(tt) * cos(theta) + d/2 * cos(tt) * sin(theta);
-                plot(x_ellipse, y_ellipse, 'b')
-                plot(x_est(1,end), x_est(2,end), 'rx', 'MarkerSize',10)
-                plot(x_est(1,end-1), x_est(2,end-1), 'kx','MarkerSize',10)
-                plot(x_pred(1), x_pred(2), 'ro', 'MarkerSize',10)
+                % plot(x_ellipse, y_ellipse, 'b')
+                % plot(x_est(1,end), x_est(2,end), 'rx', 'MarkerSize',10)
+                % plot(x_est(1,end-1), x_est(2,end-1), 'kx','MarkerSize',10)
+                % plot(x_pred(1), x_pred(2), 'ro', 'MarkerSize',10)
 
                 pointsInEllipse = 0;
                 % while (pointsInEllipse < nPoints)
