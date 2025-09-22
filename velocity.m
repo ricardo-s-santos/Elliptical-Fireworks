@@ -1,7 +1,7 @@
 function [ velocity ] = velocity( currentPosition, goalPosition )
-    paramMaxVelocity = 2;
-    paramReachDistance = 4;
-    paramSmoothFactor = 2;
+    paramMaxVelocity = 0.1;
+    paramReachDistance = 0.4;
+    paramSmoothFactor = 0.1;
     velocity = [0; 0; 0];
 
     errorPosition = goalPosition - currentPosition;

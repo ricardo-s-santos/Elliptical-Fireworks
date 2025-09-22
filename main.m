@@ -5,10 +5,11 @@ tic
 %- Simulation part -%
 %-------------------%
 M = 1; % Number of targets
-N = 4; % Number of a_i
+N = 6; % Number of a_i
 K = 10; % Number of measurement samples
 Border = 10; % Length of volume of interest
 sigma_i = 10^-6; % Noise STD in for distance measurements in meters
+moving_step = 0.1; % Step used for moving the UAV
 
 Ts = 1; % Time sample in seconds
 
@@ -21,12 +22,12 @@ S(2, 4) = delta_t;
 % Covariance Matrix
 q = 0.05; % State Process Noise (m^2/s^3)
 Q = q * [[(delta_t^3)/3, 0, (delta_t^2)/2, 0];
-         [0, (delta_t^3)/3, 0, (delta_t^2)/2];
-         [(delta_t^2)/2, 0, delta_t, 0];
-         [0, (delta_t^2)/2, 0, delta_t]
-         ];
+    [0, (delta_t^3)/3, 0, (delta_t^2)/2];
+    [(delta_t^2)/2, 0, delta_t, 0];
+    [0, (delta_t^2)/2, 0, delta_t]
+    ];
 
-a_i = [[0; 0], [0; Border], [Border/2; 0], [Border/2; Border]];
+a_i = [[0; 0], [0; Border], [Border/2; 0], [Border/2; Border], [Border; Border],[Border;0]];
 
 MC = 100; % Monte Carlo runs
 RMSE = []; % Root mean square error
@@ -48,10 +49,11 @@ while (counter - not_feasible) <= MC
     ww = 1;
     x_true = [1; 1];
     x_est = zeros(2,1);
+    x_state = zeros(4,1);
 
     while ww <= N_dest
         RMSE_goal = [];
-        while norm(x_destination(1:2,ww) - x_est(1:2,end)) > 1
+        while norm(x_destination(1:2,ww) - x_est(1:2,end)) > 0.1
             %--------------------%
             %- Get measurements -%
             %--------------------%
@@ -84,12 +86,12 @@ while (counter - not_feasible) <= MC
             D = eye(size(x,1)+1); D(size(x,1)+1,size(x,1)+1) = 0;
             f = [zeros(size(x,1),1); -1/2];
             % Using prediction
-            if qq ~= 1
+            if qq >= 100
                 P_pred = S * P * S' + Q;
                 x_pred = S * x_state(:, end);
                 A1_track = [];
                 b1_track = [];
-                for tt = 1 : 1 : N
+                for tt = 1 : 1 : size(u_ij,2)
                     ii = d_weight_ij(tt,1);
                     jj = d_weight_ij(tt,2);
                     % Updated A1_track
@@ -98,14 +100,14 @@ while (counter - not_feasible) <= MC
                 end
                 A1_track = [A1_track; P_pred^(-1/2), zeros(size(x_state,1),1)];
                 b1_track = [b1_track; P_pred^(-1/2) * x_pred];
-                W_track = diag([sqrt(1/2) * w_ij', sqrt(1/8) * ones(1,2)]);
+                W_track = diag([sqrt(1/2) * w_ij', sqrt(1/8) * ones(1,4)]);
                 D_track = zeros(5); D_track(1,1) = 1; D_track(2,2) = 1;
                 f_track = [zeros(4,1); -1/2];
                 A_track = W_track * A1_track;
                 b_track = W_track * b1_track;
             end
             % First iteraction uses the estimation only
-            if qq == 1
+            if qq < 100
                 eigen_values = eig((A'*A)^(1/2) \ D / (A'*A)^(1/2));
                 eig_1 = max(eigen_values);
                 min_lim = -1/eig_1; % Lower limit for the considered interval
@@ -127,38 +129,45 @@ while (counter - not_feasible) <= MC
                 x_state(:,qq) = real(y_hat_track(1:size(x_state,1)));
                 P = (x_state(:,qq) - x_state(:,qq-1) ) * ( x_state(:,qq) - x_state(:,qq-1) )';
 
-              %   % Fireworks part
-              %   figure
-              %   hold on
-              %   theta = atan2(x_pred(2) - x_est(2,end), x_pred(1) - x_est(1,end)); % Computing the angle of movement                
-              %   center = x_est(:,end); % Center of the ellipse
-              %   r_max = norm(x_est(:,end) - x_pred(1:2)); % Minor axis length
-              %   d = norm(x_est(:,end-1) - x_pred(1:2)); % Major axis length
-              %   tt = 0 : pi/100 : 2 * pi;
-              %   x_ellipse = center(1) + d/2 * cos(tt) * cos(theta) - r_max/2 * sin(tt) * sin(theta);
-              %   y_ellipse = center(2) + r_max/2 * sin(tt) * cos(theta) + d/2 * cos(tt) * sin(theta);
-              %   plot(x_ellipse, y_ellipse, 'b')
-              %   plot(x_est(1,end), x_est(2,end), 'rx')
-              %   plot(x_pred(1), x_pred(2), 'ro')
-              % 
-              %   nPoints = 1e3;
-              %   pointsInEllipse = 0;
-              %   %while (pointsInEllipse < nPoints)
-              %       points_tot = center + d * rand(2, nPoints) - d/2 * ones(2, nPoints); % Generating random points within a square region
-              %       plot(points_tot(1,:), points_tot(2,:),'ys')
-              %       inEllipse = ((points_tot(1,:) - center(1)) * cos(theta) + (points_tot(2,:) - center(2)) ...
-              %           * sin(theta)).^2/(d/2)^2 + (-(points_tot(1,:)-center(1)) * sin(theta) + (points_tot(2,:) - center(2)) ...
-              %           * cos(theta)).^2/(r_max/2)^2 <= 1; % Determining points inside the ellipse
-              % %      pointsInEllipse = sum(inEllipse);
-              % %      gg = 0;
-              % % end
-              %   plot(points_tot(1,inEllipse), points_tot(2,inEllipse),'g*')
-                
+                %   % Fireworks part
+                %   figure
+                %   hold on
+                %   theta = atan2(x_pred(2) - x_est(2,end), x_pred(1) - x_est(1,end)); % Computing the angle of movement
+                %   center = x_est(:,end); % Center of the ellipse
+                %   r_max = norm(x_est(:,end) - x_pred(1:2)); % Minor axis length
+                %   d = norm(x_est(:,end-1) - x_pred(1:2)); % Major axis length
+                %   tt = 0 : pi/100 : 2 * pi;
+                %   x_ellipse = center(1) + d/2 * cos(tt) * cos(theta) - r_max/2 * sin(tt) * sin(theta);
+                %   y_ellipse = center(2) + r_max/2 * sin(tt) * cos(theta) + d/2 * cos(tt) * sin(theta);
+                %   plot(x_ellipse, y_ellipse, 'b')
+                %   plot(x_est(1,end), x_est(2,end), 'rx')
+                %   plot(x_pred(1), x_pred(2), 'ro')
+                %
+                %   nPoints = 1e3;
+                %   pointsInEllipse = 0;
+                %   %while (pointsInEllipse < nPoints)
+                %       points_tot = center + d * rand(2, nPoints) - d/2 * ones(2, nPoints); % Generating random points within a square region
+                %       plot(points_tot(1,:), points_tot(2,:),'ys')
+                %       inEllipse = ((points_tot(1,:) - center(1)) * cos(theta) + (points_tot(2,:) - center(2)) ...
+                %           * sin(theta)).^2/(d/2)^2 + (-(points_tot(1,:)-center(1)) * sin(theta) + (points_tot(2,:) - center(2)) ...
+                %           * cos(theta)).^2/(r_max/2)^2 <= 1; % Determining points inside the ellipse
+                % %      pointsInEllipse = sum(inEllipse);
+                % %      gg = 0;
+                % % end
+                %   plot(points_tot(1,inEllipse), points_tot(2,inEllipse),'g*')
+
+                % After Fireworks use ML to find the min value of the
+                % particles
+
             end
             %------------------------------%
             %- Move Target using velocity -%
             %------------------------------%
-            uav_velocity = velocity(x_est(1:2,qq),x_destination(1:2,ww));
+            % Compute velocity using azimute to destination
+            azimute = atan2(x_destination(2, ww)- x_est(2,qq), x_destination(1, ww) - x_est(1,qq));
+            uav_velocity = [cos(azimute); sin(azimute)] * moving_step;
+            % Compute velocity using the velocity function
+            % uav_velocity = velocity(x_est(1:2,qq),x_destination(1:2,ww));
             x_true(1,qq+1) = x_true(1,qq) + uav_velocity(1);
             x_true(2,qq+1) = x_true(2,qq) + uav_velocity(2);
             %---------------------%
@@ -172,7 +181,6 @@ while (counter - not_feasible) <= MC
                 CDF_i = [CDF_i; norm(x - x_est(:,qq))/M];
             end
             qq = qq + 1;
-            counter = counter + 1;
         end
         ww = ww + 1;
     end
@@ -180,6 +188,7 @@ while (counter - not_feasible) <= MC
     plotScenario(Border,a_i)
     plot(x_destination(1,:), x_destination(2,:), '-', 'Linewidth', 2.5)
     plot(x_est(1,:), x_est(2,:), '-', 'Linewidth', 2.5)
+    counter = counter + 1;
 end % while (counter - not_feasible) <= MC
 
 RMSE = [RMSE, sqrt(RMSE_i/MC)]
