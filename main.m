@@ -8,8 +8,9 @@ M = 1; % Number of targets
 N = 6; % Number of a_i
 K = 10; % Number of measurement samples
 Border = 10; % Length of volume of interest
-sigma_i = 10^-6; % Noise STD in for distance measurements in meters
+sigma_i = 0.1; % Noise STD in for distance measurements in meters
 moving_step = 0.1; % Step used for moving the UAV
+nPoints = 1e3; % Number of points inside the elipse
 
 Ts = 1; % Time sample in seconds
 
@@ -86,7 +87,7 @@ while (counter - not_feasible) <= MC
             D = eye(size(x,1)+1); D(size(x,1)+1,size(x,1)+1) = 0;
             f = [zeros(size(x,1),1); -1/2];
             % Using prediction
-            if qq >= 100
+            if qq ~= 1
                 P_pred = S * P * S' + Q;
                 x_pred = S * x_state(:, end);
                 A1_track = [];
@@ -107,7 +108,7 @@ while (counter - not_feasible) <= MC
                 b_track = W_track * b1_track;
             end
             % First iteraction uses the estimation only
-            if qq < 100
+            if qq == 1
                 eigen_values = eig((A'*A)^(1/2) \ D / (A'*A)^(1/2));
                 eig_1 = max(eigen_values);
                 min_lim = -1/eig_1; % Lower limit for the considered interval
@@ -117,7 +118,7 @@ while (counter - not_feasible) <= MC
                 lambda = bisection_fun(min_lim, max_lim, tol, N_iter, A, D, b, f); % Calling the bisection function
                 y_hat = (A' * A + lambda * D + 1e-6 * eye(3)) \ (A' * b - lambda * f); % Adding regularization term to avoind matrix singularity
                 x_est(:, qq) = y_hat(1:size(x,1),1); % y_hat = [x^T, norm(x)^2]^T
-                x_state(:,qq) = [x_est(:,qq); 0; 0]; % Initial target estimation obtained by solving the localization problem
+                x_state(:,qq) = [x_est(:,qq); moving_step; 0]; % Initial target estimation obtained by solving the localization problem
                 P = eye(4);
             else % Use prediction
                 eigen_values = eig((A_track'*A_track)^(1/2) \ D_track / (A_track'*A_track)^(1/2));
@@ -127,35 +128,35 @@ while (counter - not_feasible) <= MC
                 y_hat_track = (A_track' * A_track + lambda_track * D_track + 1e-6 * eye(size(A_track,2))) \ (A_track' * b_track - lambda_track * f_track); % Adding regularization term to avoind matrix singularity
                 x_est(:, qq) = y_hat_track(1:size(x,1),1);
                 x_state(:,qq) = real(y_hat_track(1:size(x_state,1)));
-                P = (x_state(:,qq) - x_state(:,qq-1) ) * ( x_state(:,qq) - x_state(:,qq-1) )';
+                P = (x_state(:,qq) - x_state(:,qq-1)) * ( x_state(:,qq) - x_state(:,qq-1))';
+                %-------------------%
+                %- Fireworks part -%
+                %-------------------%
+                figure
+                hold on
+                theta = atan2(x_pred(2) - x_est(2,end), x_pred(1) - x_est(1,end)); % Computing the angle of movement
+                center = x_est(:,end); % Center of the ellipse
+                r_max = norm(x_est(:,end) - x_est(:,end-1)); % Minor axis length
+                d = norm(x_est(:,end) - x_pred(1:2)); % Major axis length
+                tt = 0 : pi/100 : 2 * pi;
+                x_ellipse = center(1) + d/2 * cos(tt) * cos(theta) - r_max/2 * sin(tt) * sin(theta);
+                y_ellipse = center(2) + r_max/2 * sin(tt) * cos(theta) + d/2 * cos(tt) * sin(theta);
+                plot(x_ellipse, y_ellipse, 'b')
+                plot(x_est(1,end), x_est(2,end), 'rx', 'MarkerSize',10)
+                plot(x_est(1,end-1), x_est(2,end-1), 'kx','MarkerSize',10)
+                plot(x_pred(1), x_pred(2), 'ro', 'MarkerSize',10)
 
-                %   % Fireworks part
-                %   figure
-                %   hold on
-                %   theta = atan2(x_pred(2) - x_est(2,end), x_pred(1) - x_est(1,end)); % Computing the angle of movement
-                %   center = x_est(:,end); % Center of the ellipse
-                %   r_max = norm(x_est(:,end) - x_pred(1:2)); % Minor axis length
-                %   d = norm(x_est(:,end-1) - x_pred(1:2)); % Major axis length
-                %   tt = 0 : pi/100 : 2 * pi;
-                %   x_ellipse = center(1) + d/2 * cos(tt) * cos(theta) - r_max/2 * sin(tt) * sin(theta);
-                %   y_ellipse = center(2) + r_max/2 * sin(tt) * cos(theta) + d/2 * cos(tt) * sin(theta);
-                %   plot(x_ellipse, y_ellipse, 'b')
-                %   plot(x_est(1,end), x_est(2,end), 'rx')
-                %   plot(x_pred(1), x_pred(2), 'ro')
-                %
-                %   nPoints = 1e3;
-                %   pointsInEllipse = 0;
-                %   %while (pointsInEllipse < nPoints)
-                %       points_tot = center + d * rand(2, nPoints) - d/2 * ones(2, nPoints); % Generating random points within a square region
-                %       plot(points_tot(1,:), points_tot(2,:),'ys')
-                %       inEllipse = ((points_tot(1,:) - center(1)) * cos(theta) + (points_tot(2,:) - center(2)) ...
-                %           * sin(theta)).^2/(d/2)^2 + (-(points_tot(1,:)-center(1)) * sin(theta) + (points_tot(2,:) - center(2)) ...
-                %           * cos(theta)).^2/(r_max/2)^2 <= 1; % Determining points inside the ellipse
-                % %      pointsInEllipse = sum(inEllipse);
-                % %      gg = 0;
-                % % end
-                %   plot(points_tot(1,inEllipse), points_tot(2,inEllipse),'g*')
-
+                pointsInEllipse = 0;
+                % while (pointsInEllipse < nPoints)
+                %     points_tot = center + d * rand(2, nPoints) - d/2 * ones(2, nPoints); % Generating random points within a square region
+                %     plot(points_tot(1,:), points_tot(2,:),'ys')
+                %     inEllipse = ((points_tot(1,:) - center(1)) * cos(theta) + (points_tot(2,:) - center(2)) ...
+                %       * sin(theta)).^2/(d/2)^2 + (-(points_tot(1,:)-center(1)) * sin(theta) + (points_tot(2,:) - center(2)) ...
+                %       * cos(theta)).^2/(r_max/2)^2 <= 1; % Determining points inside the ellipse
+                %     pointsInEllipse = sum(inEllipse);
+                %     gg = 0;
+                % end
+                % plot(points_tot(1,inEllipse), points_tot(2,inEllipse),'g*')
                 % After Fireworks use ML to find the min value of the
                 % particles
 
