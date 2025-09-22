@@ -1,3 +1,9 @@
+%===========================================================
+% Elliptical Fireworks
+% September 2025
+% v1.0 - Initial Implementation
+% © 2025 COPELABS - Universidade Lusófona CUL
+%===========================================================
 clear variables
 tic
 
