@@ -7,18 +7,20 @@
 clear variables
 tic
 
-%-------------------%
-%- Simulation part -%
-%-------------------%
+%-------------------------%
+%- Simulation parameters -%
+%-------------------------%
 M = 1; % Number of targets
 N = 6; % Number of a_i
 K = 10; % Number of measurement samples
+MC = 100; % Monte Carlo runs
 Border = 10; % Length of volume of interest
 sigma_i = 0.1; % Noise STD in for distance measurements in meters
 moving_step = 0.1; % Step used for moving the UAV
 nPoints = 1e3; % Number of points inside the elipse
 
-Ts = 1; % Time sample in seconds
+% Reference points true location
+a_i = [[0; 0], [0; Border], [Border/2; 0], [Border/2; Border], [Border; Border],[Border;0]];
 
 % State Matrix
 delta_t = 1;
@@ -34,9 +36,11 @@ Q = q * [[(delta_t^3)/3, 0, (delta_t^2)/2, 0];
     [0, (delta_t^2)/2, 0, delta_t]
     ];
 
-a_i = [[0; 0], [0; Border], [Border/2; 0], [Border/2; Border], [Border; Border],[Border;0]];
+% Read waypoints from file
+x_destination = csvread('Path.txt')';
+N_dest = size(x_destination,2); % Number of destinations
 
-MC = 100; % Monte Carlo runs
+% Metrics variables
 RMSE = []; % Root mean square error
 BIAS = []; % Bias of the estimator
 CDF = []; % Cumulative distributed function
@@ -47,11 +51,8 @@ BIAS_i = 0; % Bias in each MC run
 CDF_i = []; % CDF in each MC run
 not_feasible = 0; % In the case the method doesn't work for all cases
 
-x_destination = csvread('Path.txt')';
-N_dest = size(x_destination,2); % Number of destinations
-
-counter = 1;
-while (counter - not_feasible) <= MC
+mc = 1;
+while (mc - not_feasible) <= MC
     qq = 1; % Target location counter
     ww = 1;
     x_true = [1; 1];
@@ -135,9 +136,9 @@ while (counter - not_feasible) <= MC
                 x_est(:, qq) = y_hat_track(1:size(x,1),1);
                 x_state(:,qq) = real(y_hat_track(1:size(x_state,1)));
                 P = (x_state(:,qq) - x_state(:,qq-1)) * ( x_state(:,qq) - x_state(:,qq-1))';
-                %-------------------%
-                %- Fireworks part -%
-                %-------------------%
+                %--------------------%
+                %-  Fireworks part  -%
+                %--------------------%
                 % figure
                 % hold on
                 theta = atan2(x_pred(2) - x_est(2,end), x_pred(1) - x_est(1,end)); % Computing the angle of movement
@@ -172,9 +173,9 @@ while (counter - not_feasible) <= MC
             %------------------------------%
             % Compute velocity using azimute to destination
             azimute = atan2(x_destination(2, ww)- x_est(2,qq), x_destination(1, ww) - x_est(1,qq));
-            uav_velocity = [cos(azimute); sin(azimute)] * moving_step;
+            %uav_velocity = [cos(azimute); sin(azimute)] * moving_step;
             % Compute velocity using the velocity function
-            % uav_velocity = velocity(x_est(1:2,qq),x_destination(1:2,ww));
+            uav_velocity = velocity(x_est(1:2,qq),x_destination(1:2,ww));
             x_true(1,qq+1) = x_true(1,qq) + uav_velocity(1);
             x_true(2,qq+1) = x_true(2,qq) + uav_velocity(2);
             %---------------------%
@@ -195,8 +196,8 @@ while (counter - not_feasible) <= MC
     plotScenario(Border,a_i)
     plot(x_destination(1,:), x_destination(2,:), '-', 'Linewidth', 2.5)
     plot(x_est(1,:), x_est(2,:), '-', 'Linewidth', 2.5)
-    counter = counter + 1;
-end % while (counter - not_feasible) <= MC
+    mc = mc + 1;
+end % while (mc - not_feasible) <= MC
 
 RMSE = [RMSE, sqrt(RMSE_i/MC)]
 BIAS = [BIAS, norm( BIAS_i/MC, 1 )];
