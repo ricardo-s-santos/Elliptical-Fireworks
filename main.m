@@ -4,6 +4,9 @@
 % v1.0 - Initial Implementation
 % © 2025 COPELABS - Universidade Lusófona CUL
 %===========================================================
+
+
+% Implementar parte inicial do movimento (andar à volta do ponto) até se ter uma estimativa boa
 clear variables
 tic
 
@@ -18,9 +21,17 @@ Border = 10; % Length of volume of interest
 sigma_i = 0.1; % Noise STD in for distance measurements in meters
 moving_step = 0.1; % Step used for moving the UAV
 nPoints = 1e3; % Number of points inside the elipse
+delta = 0.5; % Object bias
+std_obstacle = delta / 10; % Object standard deviation
 
-% Reference points true location
+% Reference Points True Location
 a_i = [[0; 0], [0; Border], [Border/2; 0], [Border/2; Border], [Border; Border],[Border;0]];
+
+% Obstacles True Location [x1, y1; x2, y2]
+% Ver grossura dos obstáculos?
+obstacles(:,:,1) = [0 2.5; 8 2.5];
+%obstacles(:,:,2) = [2 5.5; Border 5.5];
+obstacles(:,:,2) = [0 8; 8 8];
 
 % State Matrix
 delta_t = 1;
@@ -55,7 +66,7 @@ mc = 1;
 while (mc - not_feasible) <= MC
     qq = 1; % Target location counter
     ww = 1;
-    x_true = [1; 1];
+    x_true = [5; 4];
     x_est = zeros(2,1);
     x_state = zeros(4,1);
 
@@ -68,13 +79,15 @@ while (mc - not_feasible) <= MC
             x = x_true(:, end);
             d_ik = sqrt((x(1,1) - a_i(1,:)).^2 + (x(2,1) - a_i(2,:)).^2 )' + sigma_i * randn(N,K);
             d_i = median(d_ik,2);
+            % d_i with obstacles
+            [d_i(:,qq), d_i_clean(:,qq)] = getMeasurments(x_true(:,end),a_i, N, K, sigma_i, obstacles, std_obstacle, delta);
             %-------------------%
             %- Estimation part -%
             %-------------------%
             d_weight_ij = []; % Average distance between x and a_i and between x and a_j to form weights
             u_ij = []; % Unit vector between a_i and a_j (@ a_i)
             for ii = 1 : 1 : N-1
-                for jj = ii+1 : 1 : N
+                for jj = ii + 1 : 1 : N
                     u_ij = [u_ij, (a_i(:,jj) - a_i(:,ii))/norm((a_i(:,jj) - a_i(:,ii)))];
                     d_weight_ij = [d_weight_ij; ii, jj, (d_i(ii) + d_i(jj))/2];
                 end
@@ -125,7 +138,7 @@ while (mc - not_feasible) <= MC
                 lambda = bisection_fun(min_lim, max_lim, tol, N_iter, A, D, b, f); % Calling the bisection function
                 y_hat = (A' * A + lambda * D + 1e-6 * eye(3)) \ (A' * b - lambda * f); % Adding regularization term to avoind matrix singularity
                 x_est(:, qq) = y_hat(1:size(x,1),1); % y_hat = [x^T, norm(x)^2]^T
-                x_state(:,qq) = [x_est(:,qq); moving_step; 0]; % Initial target estimation obtained by solving the localization problem
+                x_state(:,qq) = [x_est(:,qq); 0; 0]; % Initial target estimation obtained by solving the localization problem
                 P = eye(4);
             else % Use prediction
                 eigen_values = eig((A_track'*A_track)^(1/2) \ D_track / (A_track'*A_track)^(1/2));
@@ -139,8 +152,8 @@ while (mc - not_feasible) <= MC
                 %--------------------%
                 %-  Fireworks part  -%
                 %--------------------%
-                % figure
-                % hold on
+                figure
+                hold on
                 theta = atan2(x_pred(2) - x_est(2,end), x_pred(1) - x_est(1,end)); % Computing the angle of movement
                 center = x_est(:,end); % Center of the ellipse
                 r_max = norm(x_est(:,end) - x_est(:,end-1)); % Minor axis length
@@ -168,14 +181,30 @@ while (mc - not_feasible) <= MC
                 % particles
 
             end
+            %----------------------------------------%
+            %- Compute NLOS links probability -%
+            %----------------------------------------%
+            % Error between the true and measured distance
+            e_i = abs(sqrt((x_est(1,end) - a_i(1,:)).^2 + (x_est(2,end) - a_i(2,:)).^2 )' - d_i);
+            % Probability of a link being NLOS
+            p_i = e_i./sum(e_i);
+            % Ideal 1/N + sigma
+            NLOS_threshold = 1/N + sigma_i;
+            % Comparar dois vetores, se > NLOS, < LOS
+            identification = find(p_i(:,end) > NLOS_threshold == 1);
+ 
+            figure
+            plotScenario(obstacles, Border, Border, a_i)
+            plot(x_destination(1,:), x_destination(2,:), '-', 'Linewidth', 2.5)
+            plot(x_est(1,:), x_est(2,:), '-', 'Linewidth', 2.5)
             %------------------------------%
             %- Move Target using velocity -%
             %------------------------------%
             % Compute velocity using azimute to destination
             azimute = atan2(x_destination(2, ww)- x_est(2,qq), x_destination(1, ww) - x_est(1,qq));
-            %uav_velocity = [cos(azimute); sin(azimute)] * moving_step;
+            uav_velocity = [cos(azimute); sin(azimute)] * moving_step;
             % Compute velocity using the velocity function
-            uav_velocity = velocity(x_est(1:2,qq),x_destination(1:2,ww));
+            %uav_velocity = velocity(x_est(1:2,qq),x_destination(1:2,ww));
             x_true(1,qq+1) = x_true(1,qq) + uav_velocity(1);
             x_true(2,qq+1) = x_true(2,qq) + uav_velocity(2);
             %---------------------%
@@ -193,7 +222,7 @@ while (mc - not_feasible) <= MC
         ww = ww + 1;
     end
     figure
-    plotScenario(Border,a_i)
+    plotScenario(obstacles, Border, Border, a_i)
     plot(x_destination(1,:), x_destination(2,:), '-', 'Linewidth', 2.5)
     plot(x_est(1,:), x_est(2,:), '-', 'Linewidth', 2.5)
     mc = mc + 1;
