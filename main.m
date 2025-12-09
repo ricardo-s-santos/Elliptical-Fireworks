@@ -14,7 +14,7 @@ tic
 %- Simulation parameters -%
 %-------------------------%
 M = 1; % Number of targets
-N = 6; % Number of a_i
+N = 6; % Number of reference points (a_i)
 K = 10; % Number of measurement samples
 MC = 100; % Monte Carlo runs
 Border = 10; % Length of volume of interest
@@ -66,7 +66,7 @@ mc = 1;
 while (mc - not_feasible) <= MC
     qq = 1; % Target location counter
     ww = 1;
-    x_true = [5; 4];
+    x_true = [1; 1];
     x_est = zeros(2,1);
     x_state = zeros(4,1);
 
@@ -77,13 +77,15 @@ while (mc - not_feasible) <= MC
             %- Get measurements -%
             %--------------------%
             x = x_true(:, end);
+            % d_i without objects
             d_ik = sqrt((x(1,1) - a_i(1,:)).^2 + (x(2,1) - a_i(2,:)).^2 )' + sigma_i * randn(N,K);
             d_i = median(d_ik,2);
             % d_i with obstacles
-            [d_i(:,qq), d_i_clean(:,qq)] = getMeasurments(x_true(:,end),a_i, N, K, sigma_i, obstacles, std_obstacle, delta);
-            %-------------------%
-            %- Estimation part -%
-            %-------------------%
+            %[d_i(:,qq), d_i_clean(:,qq)] = getMeasurments(x_true(:,end),a_i, N, K, sigma_i, obstacles, std_obstacle, delta);
+            
+            %------------------------%
+            %- GTRS estimation part -%
+            %------------------------%
             d_weight_ij = []; % Average distance between x and a_i and between x and a_j to form weights
             u_ij = []; % Unit vector between a_i and a_j (@ a_i)
             for ii = 1 : 1 : N-1
@@ -105,9 +107,22 @@ while (mc - not_feasible) <= MC
             A = W * A1;
             b = W * b1;
             D = eye(size(x,1)+1); D(size(x,1)+1,size(x,1)+1) = 0;
-            f = [zeros(size(x,1),1); -1/2];
-            % Using prediction
-            if qq ~= 1
+            f = [zeros(size(x,1),1); -1/2];   
+            % First iteraction uses the GTRS estimation only
+            if qq == 1
+                eigen_values = eig((A'*A)^(1/2) \ D / (A'*A)^(1/2));
+                eig_1 = max(eigen_values);
+                min_lim = -1/eig_1; % Lower limit for the considered interval
+                max_lim = 1e6; % Upper limit for the considered interval
+                tol = 1e-3; % Error tolerance
+                N_iter = 30; % Maximum number of iterations for bisection
+                lambda = bisection_fun(min_lim, max_lim, tol, N_iter, A, D, b, f); % Calling the bisection function
+                y_hat = (A' * A + lambda * D + 1e-6 * eye(3)) \ (A' * b - lambda * f); % Adding regularization term to avoind matrix singularity
+                x_est(:, qq) = y_hat(1:size(x,1),1); % y_hat = [x^T, norm(x)^2]^T
+                x_state(:,qq) = [x_est(:,qq); 0; 0]; % Initial target estimation obtained by solving the localization problem
+                P = eye(4);
+            % Using prediction and Fireworks
+            else
                 P_pred = S * P * S' + Q;
                 x_pred = S * x_state(:, end);
                 A1_track = [];
@@ -126,77 +141,82 @@ while (mc - not_feasible) <= MC
                 f_track = [zeros(4,1); -1/2];
                 A_track = W_track * A1_track;
                 b_track = W_track * b1_track;
-            end
-            % First iteraction uses the estimation only
-            if qq == 1
-                eigen_values = eig((A'*A)^(1/2) \ D / (A'*A)^(1/2));
-                eig_1 = max(eigen_values);
-                min_lim = -1/eig_1; % Lower limit for the considered interval
-                max_lim = 1e6; % Upper limit for the considered interval
-                tol = 1e-3; % Error tolerance
-                N_iter = 30; % Maximum number of iterations for bisection
-                lambda = bisection_fun(min_lim, max_lim, tol, N_iter, A, D, b, f); % Calling the bisection function
-                y_hat = (A' * A + lambda * D + 1e-6 * eye(3)) \ (A' * b - lambda * f); % Adding regularization term to avoind matrix singularity
-                x_est(:, qq) = y_hat(1:size(x,1),1); % y_hat = [x^T, norm(x)^2]^T
-                x_state(:,qq) = [x_est(:,qq); 0; 0]; % Initial target estimation obtained by solving the localization problem
-                P = eye(4);
-            else % Use prediction
                 eigen_values = eig((A_track'*A_track)^(1/2) \ D_track / (A_track'*A_track)^(1/2));
                 eig_1 = max(eigen_values);
                 min_lim = -1/eig_1; % Lower limit for the considered interval
                 lambda_track = bisection_fun(min_lim, max_lim, tol, N_iter, A_track, D_track, b_track, f_track); % I am calling the bisection function
                 y_hat_track = (A_track' * A_track + lambda_track * D_track + 1e-6 * eye(size(A_track,2))) \ (A_track' * b_track - lambda_track * f_track); % Adding regularization term to avoind matrix singularity
-                x_est(:, qq) = y_hat_track(1:size(x,1),1);
+                x_est_GTRS(:, qq) = y_hat_track(1:size(x,1),1);
                 x_state(:,qq) = real(y_hat_track(1:size(x_state,1)));
                 P = (x_state(:,qq) - x_state(:,qq-1)) * ( x_state(:,qq) - x_state(:,qq-1))';
+                
                 %--------------------%
                 %-  Fireworks part  -%
                 %--------------------%
-                figure
-                hold on
-                theta = atan2(x_pred(2) - x_est(2,end), x_pred(1) - x_est(1,end)); % Computing the angle of movement
-                center = x_est(:,end); % Center of the ellipse
-                r_max = norm(x_est(:,end) - x_est(:,end-1)); % Minor axis length
-                d = norm(x_est(:,end) - x_pred(1:2)); % Major axis length
+                % Form elipse
+                theta = atan2(x_pred(2) - x_est_GTRS(2,end), x_pred(1) - x_est_GTRS(1,end)); % Computing the angle of movement
+                center = x_est_GTRS(:,end); % Center of the ellipse
+                r_max = norm(x_est_GTRS(:,end) - x_est_GTRS(:,end-1)); % Minor axis length
+                d = norm(x_est_GTRS(:,end) - x_est_GTRS(1:2)); % Major axis length
                 tt = 0 : pi/100 : 2 * pi;
                 x_ellipse = center(1) + d/2 * cos(tt) * cos(theta) - r_max/2 * sin(tt) * sin(theta);
                 y_ellipse = center(2) + r_max/2 * sin(tt) * cos(theta) + d/2 * cos(tt) * sin(theta);
+                
+                % Generate nPoints inside the elipse
+                points_tot = zeros(2, nPoints); 
+                pointsInEllipse = 0;
+                while pointsInEllipse < nPoints
+                    % Generate points
+                    points_tot = center + d * rand(2, nPoints) - d/2;
+                    % Determining points inside the ellipse
+                    inEllipse = ((points_tot(1,:) - center(1)) * cos(theta) + (points_tot(2,:) - center(2)) ...
+                    * sin(theta)).^2/(d/2)^2 + (-(points_tot(1,:)-center(1)) * sin(theta) + (points_tot(2,:) - center(2)) ...
+                    * cos(theta)).^2/(r_max/2)^2 <= 1;
+                    % Select points inside elipse
+                    selected = points_tot(:, inEllipse);
+                    % Compute number of points inside elipse
+                    nSel = size(selected, 2);
+                    % Compute how many points are left to fill the elipse
+                    remaining = nPoints - pointsInEllipse;               
+                    % Select only necessary points
+                    if nSel > remaining
+                        selected = selected(:,1:remaining);
+                        nSel = remaining;
+                    end             
+                    % Save the point in points_tot
+                    points_tot(:, pointsInEllipse+1 : pointsInEllipse+nSel) = selected;
+                    pointsInEllipse = pointsInEllipse + nSel;
+                end
+                % Plot Elipse for debug
+                % figure
+                % hold on
                 % plot(x_ellipse, y_ellipse, 'b')
                 % plot(x_est(1,end), x_est(2,end), 'rx', 'MarkerSize',10)
                 % plot(x_est(1,end-1), x_est(2,end-1), 'kx','MarkerSize',10)
                 % plot(x_pred(1), x_pred(2), 'ro', 'MarkerSize',10)
-
-                pointsInEllipse = 0;
-                % while (pointsInEllipse < nPoints)
-                %     points_tot = center + d * rand(2, nPoints) - d/2 * ones(2, nPoints); % Generating random points within a square region
-                %     plot(points_tot(1,:), points_tot(2,:),'ys')
-                %     inEllipse = ((points_tot(1,:) - center(1)) * cos(theta) + (points_tot(2,:) - center(2)) ...
-                %       * sin(theta)).^2/(d/2)^2 + (-(points_tot(1,:)-center(1)) * sin(theta) + (points_tot(2,:) - center(2)) ...
-                %       * cos(theta)).^2/(r_max/2)^2 <= 1; % Determining points inside the ellipse
-                %     pointsInEllipse = sum(inEllipse);
-                %     gg = 0;
-                % end
                 % plot(points_tot(1,inEllipse), points_tot(2,inEllipse),'g*')
+                
                 % After Fireworks use ML to find the min value of the
                 % particles
-
+                x_est(:, qq) = MaximumLikelihood(points_tot, sigma_i, a_i, d_i);
+                gg = 0;
             end
             %----------------------------------------%
             %- Compute NLOS links probability -%
             %----------------------------------------%
-            % Error between the true and measured distance
-            e_i = abs(sqrt((x_est(1,end) - a_i(1,:)).^2 + (x_est(2,end) - a_i(2,:)).^2 )' - d_i);
-            % Probability of a link being NLOS
-            p_i = e_i./sum(e_i);
-            % Ideal 1/N + sigma
-            NLOS_threshold = 1/N + sigma_i;
-            % Comparar dois vetores, se > NLOS, < LOS
-            identification = find(p_i(:,end) > NLOS_threshold == 1);
- 
-            figure
-            plotScenario(obstacles, Border, Border, a_i)
-            plot(x_destination(1,:), x_destination(2,:), '-', 'Linewidth', 2.5)
-            plot(x_est(1,:), x_est(2,:), '-', 'Linewidth', 2.5)
+            % % Error between the true and measured distance
+            % e_i = abs(sqrt((x_est(1,end) - a_i(1,:)).^2 + (x_est(2,end) - a_i(2,:)).^2 )' - d_i);
+            % % Probability of a link being NLOS
+            % p_i = e_i./sum(e_i);
+            % % Ideal 1/N + sigma
+            % NLOS_threshold = 1/N + sigma_i;
+            % % Comparar dois vetores, se > NLOS, < LOS
+            % identification = find(p_i(:,end) > NLOS_threshold == 1);
+            % 
+            % figure
+            % plotScenario(obstacles, Border, Border, a_i)
+            % plot(x_destination(1,:), x_destination(2,:), 'x', 'Linewidth', 2.5)
+            % plot(x_est(1,end), x_est(2,end), 'x', 'MarkerSize', 10)
             %------------------------------%
             %- Move Target using velocity -%
             %------------------------------%
