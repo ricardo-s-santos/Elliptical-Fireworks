@@ -4,9 +4,12 @@
 % v1.0 - Initial Implementation
 % © 2025 COPELABS - Universidade Lusófona CUL
 %===========================================================
+
+%===========================================================
 % TODO:
 % 1 - Implementar parte inicial do movimento (andar à volta do ponto) até se ter uma estimativa boa
 %===========================================================
+
 clear variables
 tic
 
