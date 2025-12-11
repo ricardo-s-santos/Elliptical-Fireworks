@@ -1,13 +1,17 @@
 %===========================================================
 % Elliptical Fireworks
-% September 2025
+% December 2025
 % v1.0 - Initial Implementation
 % © 2025 COPELABS - Universidade Lusófona CUL
 %===========================================================
 
 %===========================================================
 % TODO:
-% 1 - Implementar parte inicial do movimento (andar à volta do ponto) até se ter uma estimativa boa
+% 1 - Ver elipse se está bem implementada
+% 2 - Limitar medições à diagonal máxima
+% 3 - Escolher ancoras mais próximas para estimar a posição
+% 4 - Elipse -> d / 2 e r_max / 2
+% 5 - Ver grossura dos obstáculos?
 %===========================================================
 
 clear variables
@@ -21,17 +25,16 @@ N = 6; % Number of reference points (a_i)
 K = 10; % Number of measurement samples
 MC = 100; % Monte Carlo runs
 Border = 10; % Length of volume of interest
-sigma_i = 0.1; % Noise STD in for distance measurements in meters
+sigma_i = 1; % Noise STD in for distance measurements in meters
 moving_step = 0.1; % Step used for moving the UAV
 nPoints = 1e3; % Number of points inside the elipse
-delta = 0.5; % Object bias
+delta = 1; % Object bias
 std_obstacle = delta / 10; % Object standard deviation
 
 % Reference Points True Location
 a_i = [[0; 0], [0; Border], [Border/2; 0], [Border/2; Border], [Border; Border],[Border;0]];
 
 % Obstacles True Location [x1, y1; x2, y2]
-% Ver grossura dos obstáculos?
 obstacles(:,:,1) = [0 2.5; 8 2.5];
 %obstacles(:,:,2) = [2 5.5; Border 5.5];
 obstacles(:,:,2) = [0 8; 8 8];
@@ -75,20 +78,19 @@ while (mc - not_feasible) <= MC
 
     while ww <= N_dest
         RMSE_goal = [];
-        while norm(x_destination(1:2,ww) - x_est(1:2,end)) > 0.1
-            %--------------------%
-            %- Get measurements -%
-            %--------------------%
+        while norm(x_destination(1:2,ww) - x_true(1:2,end)) > 0.1
+            %----------------------------------------------%
+            %- Get measurements from the reference points -%
+            %----------------------------------------------%
             x = x_true(:, end);
-            % d_i without objects
-            d_ik = sqrt((x(1,1) - a_i(1,:)).^2 + (x(2,1) - a_i(2,:)).^2 )' + sigma_i * randn(N,K);
-            d_i = median(d_ik,2);
-            % d_i with obstacles
-            %[d_i(:,qq), d_i_clean(:,qq)] = getMeasurments(x_true(:,end),a_i, N, K, sigma_i, obstacles, std_obstacle, delta);
-            
-            %------------------------%
-            %- GTRS estimation part -%
-            %------------------------%
+            % Measurements with influence of objects
+            [d_i, d_i_clean] = getMeasurments(x_true(:,end),a_i, N, K, sigma_i, obstacles, std_obstacle, delta);
+
+            % Measurements without influence of objects
+            %d_i = d_i_clean;
+            %----------------------------%
+            %- GTRS position estimation -%
+            %----------------------------%
             d_weight_ij = []; % Average distance between x and a_i and between x and a_j to form weights
             u_ij = []; % Unit vector between a_i and a_j (@ a_i)
             for ii = 1 : 1 : N-1
@@ -110,7 +112,7 @@ while (mc - not_feasible) <= MC
             A = W * A1;
             b = W * b1;
             D = eye(size(x,1)+1); D(size(x,1)+1,size(x,1)+1) = 0;
-            f = [zeros(size(x,1),1); -1/2];   
+            f = [zeros(size(x,1),1); -1/2];
             % First iteraction uses the GTRS estimation only
             if qq == 1
                 eigen_values = eig((A'*A)^(1/2) \ D / (A'*A)^(1/2));
@@ -124,7 +126,7 @@ while (mc - not_feasible) <= MC
                 x_est(:, qq) = y_hat(1:size(x,1),1); % y_hat = [x^T, norm(x)^2]^T
                 x_state(:,qq) = [x_est(:,qq); 0; 0]; % Initial target estimation obtained by solving the localization problem
                 P = eye(4);
-            % Using prediction and Fireworks
+                % Using prediction and Fireworks
             else
                 P_pred = S * P * S' + Q;
                 x_pred = S * x_state(:, end);
@@ -152,10 +154,10 @@ while (mc - not_feasible) <= MC
                 x_est_GTRS(:, qq) = y_hat_track(1:size(x,1),1);
                 x_state(:,qq) = real(y_hat_track(1:size(x_state,1)));
                 P = (x_state(:,qq) - x_state(:,qq-1)) * ( x_state(:,qq) - x_state(:,qq-1))';
-                
-                %--------------------%
-                %-  Fireworks part  -%
-                %--------------------%
+
+                %------------------------------------------------%
+                %- Position estimate improvement with Fireworks -%
+                %------------------------------------------------%
                 % Form elipse
                 theta = atan2(x_pred(2) - x_est_GTRS(2,end), x_pred(1) - x_est_GTRS(1,end)); % Computing the angle of movement
                 center = x_est_GTRS(:,end); % Center of the ellipse
@@ -164,48 +166,48 @@ while (mc - not_feasible) <= MC
                 tt = 0 : pi/100 : 2 * pi;
                 x_ellipse = center(1) + d/2 * cos(tt) * cos(theta) - r_max/2 * sin(tt) * sin(theta);
                 y_ellipse = center(2) + r_max/2 * sin(tt) * cos(theta) + d/2 * cos(tt) * sin(theta);
-                
+
                 % Generate nPoints inside the elipse
-                points_tot = zeros(2, nPoints); 
+                points_tot = zeros(2, nPoints);
                 pointsInEllipse = 0;
                 while pointsInEllipse < nPoints
                     % Generate points
                     points_tot = center + d * rand(2, nPoints) - d/2;
                     % Determining points inside the ellipse
                     inEllipse = ((points_tot(1,:) - center(1)) * cos(theta) + (points_tot(2,:) - center(2)) ...
-                    * sin(theta)).^2/(d/2)^2 + (-(points_tot(1,:)-center(1)) * sin(theta) + (points_tot(2,:) - center(2)) ...
-                    * cos(theta)).^2/(r_max/2)^2 <= 1;
+                        * sin(theta)).^2/(d/2)^2 + (-(points_tot(1,:)-center(1)) * sin(theta) + (points_tot(2,:) - center(2)) ...
+                        * cos(theta)).^2/(r_max/2)^2 <= 1;
                     % Select points inside elipse
                     selected = points_tot(:, inEllipse);
                     % Compute number of points inside elipse
                     nSel = size(selected, 2);
                     % Compute how many points are left to fill the elipse
-                    remaining = nPoints - pointsInEllipse;               
+                    remaining = nPoints - pointsInEllipse;
                     % Select only necessary points
                     if nSel > remaining
                         selected = selected(:,1:remaining);
                         nSel = remaining;
-                    end             
+                    end
                     % Save the point in points_tot
                     points_tot(:, pointsInEllipse+1 : pointsInEllipse+nSel) = selected;
                     pointsInEllipse = pointsInEllipse + nSel;
                 end
+
                 % Plot Elipse for debug
                 % figure
                 % hold on
                 % plot(x_ellipse, y_ellipse, 'b')
                 % plot(x_est(1,end), x_est(2,end), 'rx', 'MarkerSize',10)
-                % plot(x_est(1,end-1), x_est(2,end-1), 'kx','MarkerSize',10)
+                % %plot(x_est(1,end-1), x_est(2,end-1), 'kx','MarkerSize',10)
                 % plot(x_pred(1), x_pred(2), 'ro', 'MarkerSize',10)
                 % plot(points_tot(1,inEllipse), points_tot(2,inEllipse),'g*')
-                
-                % After Fireworks use ML to find the min value of the
-                % particles
-                x_est(:, qq) = MaximumLikelihood(points_tot, sigma_i, a_i, d_i);
-                gg = 0;
+
+                % After Fireworks use ML to find the min value of the nPoints
+                x_est(:, qq) = MaximumLikelihood(points_tot, a_i, d_i);
             end
+
             %----------------------------------------%
-            %- Compute NLOS links probability -%
+            %- Compute NLOS links probability        -%
             %----------------------------------------%
             % % Error between the true and measured distance
             % e_i = abs(sqrt((x_est(1,end) - a_i(1,:)).^2 + (x_est(2,end) - a_i(2,:)).^2 )' - d_i);
@@ -215,11 +217,12 @@ while (mc - not_feasible) <= MC
             % NLOS_threshold = 1/N + sigma_i;
             % % Comparar dois vetores, se > NLOS, < LOS
             % identification = find(p_i(:,end) > NLOS_threshold == 1);
-            % 
+            %
             % figure
             % plotScenario(obstacles, Border, Border, a_i)
             % plot(x_destination(1,:), x_destination(2,:), 'x', 'Linewidth', 2.5)
             % plot(x_est(1,end), x_est(2,end), 'x', 'MarkerSize', 10)
+
             %------------------------------%
             %- Move Target using velocity -%
             %------------------------------%
@@ -230,9 +233,10 @@ while (mc - not_feasible) <= MC
             %uav_velocity = velocity(x_est(1:2,qq),x_destination(1:2,ww));
             x_true(1,qq+1) = x_true(1,qq) + uav_velocity(1);
             x_true(2,qq+1) = x_true(2,qq) + uav_velocity(2);
-            %---------------------%
-            %- Error Calculation -%
-            %---------------------%
+
+            %-----------------------%
+            %- Metrics Calculation -%
+            %-----------------------%
             if sum(sum(isnan(x_est))) >= 1 || sum(sum(isinf(x_est))) >= 1
                 not_feasible = not_feasible + 1;
             else
@@ -247,7 +251,7 @@ while (mc - not_feasible) <= MC
     figure
     plotScenario(obstacles, Border, Border, a_i)
     plot(x_destination(1,:), x_destination(2,:), '-', 'Linewidth', 2.5)
-    plot(x_est(1,:), x_est(2,:), '-', 'Linewidth', 2.5)
+    plot(x_true(1,:), x_true(2,:), '-', 'Linewidth', 2.5)
     mc = mc + 1;
 end % while (mc - not_feasible) <= MC
 
