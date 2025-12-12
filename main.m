@@ -86,6 +86,8 @@ while (mc - not_feasible) <= MC
 
             % Measurements without influence of objects
             %d_i = d_i_clean;
+
+
             %----------------------------%
             %- GTRS position estimation -%
             %----------------------------%
@@ -169,9 +171,9 @@ while (mc - not_feasible) <= MC
                 x_ellipse = center(1) + d/2 * cos(tt) * cos(theta) - r_max/2 * sin(tt) * sin(theta);
                 y_ellipse = center(2) + r_max/2 * sin(tt) * cos(theta) + d/2 * cos(tt) * sin(theta);
 
-                % Generate nPoints inside the elipse
+                % Generate nPoints inside the elipse and save in nPoints
                 points_tot = zeros(2, nPoints);
-                pointsInEllipse = 0;
+                pointsInEllipse = 0; % Counter of points already in the elipse
                 while pointsInEllipse < nPoints
                     % Generate points
                     points_tot = center + d * rand(2, nPoints) - d/2;
@@ -194,7 +196,6 @@ while (mc - not_feasible) <= MC
                     points_tot(:, pointsInEllipse+1 : pointsInEllipse+nSel) = selected;
                     pointsInEllipse = pointsInEllipse + nSel;
                 end
-
                 % Plot Elipse for debug
                 % figure
                 % hold on
