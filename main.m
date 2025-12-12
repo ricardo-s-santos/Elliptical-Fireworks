@@ -7,11 +7,9 @@
 
 %===========================================================
 % TODO:
-% 1 - Ver elipse se está bem implementada
-% 2 - Limitar medições à diagonal máxima
-% 3 - Escolher ancoras mais próximas para estimar a posição
-% 4 - Elipse -> d / 2 e r_max / 2
-% 5 - Ver grossura dos obstáculos?
+% 1 - Limitar medições à diagonal máxima
+% 2 - Escolher ancoras mais próximas para estimar a posição
+% 3 - Ver grossura dos obstáculos?
 %===========================================================
 
 clear variables
@@ -160,9 +158,13 @@ while (mc - not_feasible) <= MC
                 %------------------------------------------------%
                 % Form elipse
                 theta = atan2(x_pred(2) - x_est_GTRS(2,end), x_pred(1) - x_est_GTRS(1,end)); % Computing the angle of movement
-                center = x_est_GTRS(:,end); % Center of the ellipse
-                r_max = norm(x_est_GTRS(:,end) - x_est_GTRS(:,end-1)); % Minor axis length
-                d = norm(x_est_GTRS(:,end) - x_est_GTRS(1:2)); % Major axis length
+                center = x_pred(1:2,end); % Center of the ellipse
+                % Minor axis length - half of the distance bewteen x_pred
+                % and current x_est
+                r_max = norm(x_pred(1:2) - x_est_GTRS(:,end)) / 2;
+                % Major axis length- half of the distance bewteen x_pred
+                % and prior x_est
+                d = norm(x_pred(1:2) - x_est_GTRS(:,end-1)) / 2; 
                 tt = 0 : pi/100 : 2 * pi;
                 x_ellipse = center(1) + d/2 * cos(tt) * cos(theta) - r_max/2 * sin(tt) * sin(theta);
                 y_ellipse = center(2) + r_max/2 * sin(tt) * cos(theta) + d/2 * cos(tt) * sin(theta);
@@ -197,9 +199,11 @@ while (mc - not_feasible) <= MC
                 % figure
                 % hold on
                 % plot(x_ellipse, y_ellipse, 'b')
-                % plot(x_est(1,end), x_est(2,end), 'rx', 'MarkerSize',10)
-                % %plot(x_est(1,end-1), x_est(2,end-1), 'kx','MarkerSize',10)
-                % plot(x_pred(1), x_pred(2), 'ro', 'MarkerSize',10)
+                % plot(x_est(1,end), x_est(2,end), 'rx', 'MarkerSize',15)
+                % if size(x_est,2) > 1
+                %     plot(x_est(1,end-1), x_est(2,end-1), 'kx','MarkerSize',15)
+                % end
+                % plot(x_pred(1), x_pred(2), 'ro', 'MarkerSize',15)
                 % plot(points_tot(1,inEllipse), points_tot(2,inEllipse),'g*')
 
                 % After Fireworks use ML to find the min value of the nPoints
