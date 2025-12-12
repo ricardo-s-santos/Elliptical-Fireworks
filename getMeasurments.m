@@ -3,6 +3,7 @@ function [d_i, d_i_clean] = getMeasurments(x_true,a_i, N, K, sigma, obstacles, s
     % Compute RSS
     %---------------------------------------------------------------------
     d_ik = zeros(N,K);
+    d_ik_clean = zeros(N,K);
     delta_i = 2 * std_obstacle * rand(N,K) + (delta - std_obstacle) * ones(N,K);
     for n = 1 : N
         number_of_interscetions = 0;

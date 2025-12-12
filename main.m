@@ -153,7 +153,7 @@ while (mc - not_feasible) <= MC
                 y_hat_track = (A_track' * A_track + lambda_track * D_track + 1e-6 * eye(size(A_track,2))) \ (A_track' * b_track - lambda_track * f_track); % Adding regularization term to avoind matrix singularity
                 x_est_GTRS(:, qq) = y_hat_track(1:size(x,1),1);
                 x_state(:,qq) = real(y_hat_track(1:size(x_state,1)));
-                P = (x_state(:,qq) - x_state(:,qq-1)) * ( x_state(:,qq) - x_state(:,qq-1))';
+                P = (x_state(:,qq) - x_state(:,qq-1)) * (x_state(:,qq) - x_state(:,qq-1))';
 
                 %------------------------------------------------%
                 %- Position estimate improvement with Fireworks -%
@@ -192,7 +192,7 @@ while (mc - not_feasible) <= MC
                         selected = selected(:,1:remaining);
                         nSel = remaining;
                     end
-                    % Save the point in points_tot
+                    % Save the selected points in points_tot
                     points_tot(:, pointsInEllipse+1 : pointsInEllipse+nSel) = selected;
                     pointsInEllipse = pointsInEllipse + nSel;
                 end
