@@ -1,4 +1,4 @@
-function [d_i, d_i_clean] = getMeasurments(x_true,a_i, N, K, sigma, obstacles, std_obstacle,delta)
+function [d_i, d_i_clean] = getMeasurments(x_true, a_i, N, K, sigma, obstacles, std_obstacle, delta)
     %---------------------------------------------------------------------
     % Compute RSS
     %---------------------------------------------------------------------
@@ -12,12 +12,29 @@ function [d_i, d_i_clean] = getMeasurments(x_true,a_i, N, K, sigma, obstacles, s
             number_of_interscetions = number_of_interscetions + compute_intersections(x_true, a_i(:,n), obstacles(:,:,j));
         end
         d_ik(n,:) = sqrt((x_true(1) - a_i(1,n)).^2 + (x_true(2) - a_i(2,n)).^2)' .* ones(1,K) + (delta_i(n,:) * number_of_interscetions) + sigma * randn(1,K);
-        % d_i without the influence of obstacles
+        % Measurments without the influence of obstacles
         d_ik_clean(n,:) = d_ik(n,:) - (delta_i(n,:) * number_of_interscetions);
     end
-    % Median of the distances
+    % Median of the measured distances
     d_i = median(d_ik,2);
     d_i_clean = median(d_ik_clean,2);
+    %---------------------------------------------------------------------
+    % Max distance measurment (diagonal between the current anchor and the
+    % furthest one
+    %---------------------------------------------------------------------
+    maxDiagonalCornerAnchors = sqrt((a_i(1,1) - a_i(1,2)).^2 + (a_i(2,1) - a_i(2,2)).^2);
+    maxDiagonalMiddleAnchors = sqrt((a_i(1,2) - a_i(1,5)).^2 + (a_i(2,2) - a_i(2,5)).^2);
+    % Check if any of the measurments is bigger than the diagonals
+    for i = 1 : 1 : 4 % Border Anchors
+        if d_i(i) > maxDiagonalCornerAnchors
+            d_i(i) = maxDiagonalCornerAnchors;
+        end
+    end
+    for i = 5 : 1 : N % Middle Anchors
+        if d_i(i) > maxDiagonalMiddleAnchors
+            d_i(i) = maxDiagonalMiddleAnchors;
+        end
+    end
 end
 
 function has_intersection = compute_intersections(x_true, a_i, obstacles)
@@ -36,8 +53,6 @@ function has_intersection = compute_intersections(x_true, a_i, obstacles)
     u = -(((x1-x2)*(y1-y3)) - ((y1-y2)*(x1-x3))) / ((x1-x2)*(y3-y4)-(y1-y2)*(x3-x4));
     if (t >= 0 && t <=1) && (u >= 0 && u <=1)
         has_intersection = 1;
-        % may be usefull in the future
-        %intersection_point = [x1 + t*(x2-x1), y1 + t*(y2-y1)];
     else
         has_intersection = 0;
     end

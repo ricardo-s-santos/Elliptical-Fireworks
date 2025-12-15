@@ -7,19 +7,17 @@
 
 %===========================================================
 % TODO:
-% 1 - Limitar medições à diagonal máxima
-% 2 - Escolher ancoras mais próximas para estimar a posição
-% 3 - Ver grossura dos obstáculos?
+% 1 - Escolher âncoras mais próximas para estimar a posição
+% 2 - Ver grossura dos obstáculos?
 %===========================================================
 
 clear variables
-tic
 
 %-------------------------%
 %- Simulation parameters -%
 %-------------------------%
 M = 1; % Number of targets
-N = 6; % Number of reference points (a_i)
+N = 8; % Number of reference points (a_i)
 K = 10; % Number of measurement samples
 MC = 100; % Monte Carlo runs
 Border = 10; % Length of volume of interest
@@ -30,7 +28,8 @@ delta = 1; % Object bias
 std_obstacle = delta / 10; % Object standard deviation
 
 % Reference Points True Location
-a_i = [[0; 0], [0; Border], [Border/2; 0], [Border/2; Border], [Border; Border],[Border;0]];
+% First 4 positions are the corners, the others are middle
+a_i = [[0; 0], [Border; Border], [0; Border],[Border;0], [Border/2; 0], [Border/2; Border], [0; Border/2], [Border; Border/2]];
 
 % Obstacles True Location [x1, y1; x2, y2]
 obstacles(:,:,1) = [0 2.5; 8 2.5];
@@ -67,6 +66,8 @@ CDF_i = []; % CDF in each MC run
 not_feasible = 0; % In the case the method doesn't work for all cases
 
 mc = 1;
+% Measure running time
+tic
 while (mc - not_feasible) <= MC
     qq = 1; % Target location counter
     ww = 1;
@@ -86,7 +87,6 @@ while (mc - not_feasible) <= MC
 
             % Measurements without influence of objects
             %d_i = d_i_clean;
-
 
             %----------------------------%
             %- GTRS position estimation -%
@@ -197,15 +197,15 @@ while (mc - not_feasible) <= MC
                     pointsInEllipse = pointsInEllipse + nSel;
                 end
                 % Plot Elipse for debug
-                % figure
-                % hold on
-                % plot(x_ellipse, y_ellipse, 'b')
-                % plot(x_est(1,end), x_est(2,end), 'rx', 'MarkerSize',15)
-                % if size(x_est,2) > 1
-                %     plot(x_est(1,end-1), x_est(2,end-1), 'kx','MarkerSize',15)
-                % end
-                % plot(x_pred(1), x_pred(2), 'ro', 'MarkerSize',15)
-                % plot(points_tot(1,inEllipse), points_tot(2,inEllipse),'g*')
+                figure
+                hold on
+                plot(x_ellipse, y_ellipse, 'b')
+                plot(x_est(1,end), x_est(2,end), 'rx', 'MarkerSize',15)
+                if size(x_est,2) > 1
+                    plot(x_est(1,end-1), x_est(2,end-1), 'kx','MarkerSize',15)
+                end
+                plot(x_pred(1), x_pred(2), 'ro', 'MarkerSize',15)
+                plot(points_tot(1,inEllipse), points_tot(2,inEllipse),'g*')
 
                 % After Fireworks use ML to find the min value of the nPoints
                 x_est(:, qq) = MaximumLikelihood(points_tot, a_i, d_i);
