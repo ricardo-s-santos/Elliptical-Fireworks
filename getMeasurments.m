@@ -1,4 +1,4 @@
-function [d_i, d_i_clean] = getMeasurments(x_true, a_i, N, K, sigma, obstacles, std_obstacle, delta)
+function [d_i, d_i_clean] = getMeasurments(x_true, a_i, N, K, sigma, obstacles, std_obstacle, delta, safety_distance)
     %---------------------------------------------------------------------
     % Compute RSS
     %---------------------------------------------------------------------
@@ -26,13 +26,13 @@ function [d_i, d_i_clean] = getMeasurments(x_true, a_i, N, K, sigma, obstacles, 
     maxDiagonalMiddleAnchors = sqrt((a_i(1,2) - a_i(1,5)).^2 + (a_i(2,2) - a_i(2,5)).^2);
     % Check if any of the measurments is bigger than the diagonals
     for i = 1 : 1 : 4 % Border Anchors
-        if d_i(i) > maxDiagonalCornerAnchors
-            d_i(i) = maxDiagonalCornerAnchors;
+        if d_i(i) > maxDiagonalCornerAnchors - safety_distance
+            d_i(i) = maxDiagonalCornerAnchors - safety_distance;
         end
     end
     for i = 5 : 1 : N % Middle Anchors
-        if d_i(i) > maxDiagonalMiddleAnchors
-            d_i(i) = maxDiagonalMiddleAnchors;
+        if d_i(i) > maxDiagonalMiddleAnchors - safety_distance
+            d_i(i) = maxDiagonalMiddleAnchors- safety_distance;
         end
     end
 end

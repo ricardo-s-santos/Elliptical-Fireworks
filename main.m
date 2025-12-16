@@ -7,7 +7,7 @@
 
 %===========================================================
 % TODO:
-% 1 - Escolher âncoras mais próximas para estimar a posição
+% 1 - Incluir estimativa do GTRS na elipse, ver bugs na elipse
 % 2 - Ver grossura dos obstáculos?
 %===========================================================
 
@@ -26,6 +26,7 @@ moving_step = 0.1; % Step used for moving the UAV
 nPoints = 1e3; % Number of points inside the elipse
 delta = 1; % Object bias
 std_obstacle = delta / 10; % Object standard deviation
+safety_distance = 0.5; % Safety distance to avoid crashing to the walls
 
 % Reference Points True Location
 % First 4 positions are the corners, the others are middle
@@ -83,7 +84,7 @@ while (mc - not_feasible) <= MC
             %----------------------------------------------%
             x = x_true(:, end);
             % Measurements with influence of objects
-            [d_i, d_i_clean] = getMeasurments(x_true(:,end),a_i, N, K, sigma_i, obstacles, std_obstacle, delta);
+            [d_i, d_i_clean] = getMeasurments(x_true(:,end),a_i, N, K, sigma_i, obstacles, std_obstacle, delta, safety_distance);
 
             % Measurements without influence of objects
             %d_i = d_i_clean;
@@ -91,10 +92,16 @@ while (mc - not_feasible) <= MC
             %----------------------------%
             %- GTRS position estimation -%
             %----------------------------%
+            if qq == 1 % In the first iteration, the first $number_of_anchors_to_use are used to estimate the position
+                number_of_anchors_to_use = 4;
+                [d_i_aux, index] = sort(d_i, 'ascend');
+                d_i = d_i_aux(1:number_of_anchors_to_use);
+                a_i = a_i(:,index(1:number_of_anchors_to_use));
+            end
             d_weight_ij = []; % Average distance between x and a_i and between x and a_j to form weights
             u_ij = []; % Unit vector between a_i and a_j (@ a_i)
-            for ii = 1 : 1 : N-1
-                for jj = ii + 1 : 1 : N
+            for ii = 1 : 1 : size(a_i,2) - 1
+                for jj = ii + 1 : 1 : size(a_i,2)
                     u_ij = [u_ij, (a_i(:,jj) - a_i(:,ii))/norm((a_i(:,jj) - a_i(:,ii)))];
                     d_weight_ij = [d_weight_ij; ii, jj, (d_i(ii) + d_i(jj))/2];
                 end
@@ -123,10 +130,19 @@ while (mc - not_feasible) <= MC
                 N_iter = 30; % Maximum number of iterations for bisection
                 lambda = bisection_fun(min_lim, max_lim, tol, N_iter, A, D, b, f); % Calling the bisection function
                 y_hat = (A' * A + lambda * D + 1e-6 * eye(3)) \ (A' * b - lambda * f); % Adding regularization term to avoind matrix singularity
-                x_est(:, qq) = y_hat(1:size(x,1),1); % y_hat = [x^T, norm(x)^2]^T
+                x_est(:, qq) = real(y_hat(1:size(x,1),1)); % y_hat = [x^T, norm(x)^2]^T
+                if x_est(1,end) < 0
+                   x_est(1,end) = safety_distance;
+                elseif x_est(1,end) > Border
+                   x_est(1,end) = Border - safety_distance;
+                elseif x_est(2,end) < 0
+                   x_est(2,end) = safety_distance;
+                elseif x_est(2,end) > Border
+                   x_est(2,end) = Border - safety_distance;
+                end
                 x_state(:,qq) = [x_est(:,qq); 0; 0]; % Initial target estimation obtained by solving the localization problem
                 P = eye(4);
-                % Using prediction and Fireworks
+                a_i = [[0; 0], [Border; Border], [0; Border],[Border;0], [Border/2; 0], [Border/2; Border], [0; Border/2], [Border; Border/2]];
             else
                 P_pred = S * P * S' + Q;
                 x_pred = S * x_state(:, end);
@@ -151,6 +167,15 @@ while (mc - not_feasible) <= MC
                 min_lim = -1/eig_1; % Lower limit for the considered interval
                 lambda_track = bisection_fun(min_lim, max_lim, tol, N_iter, A_track, D_track, b_track, f_track); % I am calling the bisection function
                 y_hat_track = (A_track' * A_track + lambda_track * D_track + 1e-6 * eye(size(A_track,2))) \ (A_track' * b_track - lambda_track * f_track); % Adding regularization term to avoind matrix singularity
+                if y_hat_track(1,end) < 0
+                    y_hat_track(1,end) = safety_distance;
+                elseif y_hat_track(1,end) > Border
+                    y_hat_track(1,end) = Border - safety_distance;
+                elseif y_hat_track(2,end) < 0
+                    y_hat_track(2,end) = safety_distance;
+                elseif y_hat_track(2,end) > Border
+                    y_hat_track(2,end) = Border - safety_distance;
+                end
                 x_est_GTRS(:, qq) = y_hat_track(1:size(x,1),1);
                 x_state(:,qq) = real(y_hat_track(1:size(x_state,1)));
                 P = (x_state(:,qq) - x_state(:,qq-1)) * (x_state(:,qq) - x_state(:,qq-1))';
@@ -205,7 +230,7 @@ while (mc - not_feasible) <= MC
                     plot(x_est(1,end-1), x_est(2,end-1), 'kx','MarkerSize',15)
                 end
                 plot(x_pred(1), x_pred(2), 'ro', 'MarkerSize',15)
-                plot(points_tot(1,inEllipse), points_tot(2,inEllipse),'g*')
+                plot(points_tot(1,:), points_tot(2,:),'g*')
 
                 % After Fireworks use ML to find the min value of the nPoints
                 x_est(:, qq) = MaximumLikelihood(points_tot, a_i, d_i);
