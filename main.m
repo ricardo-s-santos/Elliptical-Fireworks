@@ -7,8 +7,7 @@
 
 %===========================================================
 % TODO:
-% 1 - Incluir estimativa do GTRS na elipse, ver bugs na elipse
-% 2 - Ver grossura dos obstáculos?
+% 1 - Ver grossura dos obstáculos?
 %===========================================================
 
 clear variables
@@ -18,15 +17,16 @@ clear variables
 %-------------------------%
 M = 1; % Number of targets
 N = 8; % Number of reference points (a_i)
-K = 10; % Number of measurement samples
+K = 50; % Number of measurement samples
 MC = 100; % Monte Carlo runs
 Border = 10; % Length of volume of interest
 sigma_i = 1; % Noise STD in for distance measurements in meters
-moving_step = 0.1; % Step used for moving the UAV
+moving_step = 0.5; % Step used for moving the UAV
 nPoints = 1e3; % Number of points inside the elipse
 delta = 1; % Object bias
 std_obstacle = delta / 10; % Object standard deviation
 safety_distance = 0.5; % Safety distance to avoid crashing to the walls
+stop_threshold = 1; % Distance to reach the destinations
 
 % Reference Points True Location
 % First 4 positions are the corners, the others are middle
@@ -78,7 +78,7 @@ while (mc - not_feasible) <= MC
 
     while ww <= N_dest
         RMSE_goal = [];
-        while norm(x_destination(1:2,ww) - x_true(1:2,end)) > 0.1
+        while norm(x_destination(1:2,ww) - x_true(1:2,end)) > stop_threshold
             %----------------------------------------------%
             %- Get measurements from the reference points -%
             %----------------------------------------------%
@@ -199,7 +199,7 @@ while (mc - not_feasible) <= MC
                 % Generate nPoints inside the elipse and save in nPoints
                 points_tot = zeros(2, nPoints);
                 pointsInEllipse = 0; % Counter of points already in the elipse
-                while pointsInEllipse < nPoints
+                while pointsInEllipse < nPoints - 1 % Last position is GTRS estimate
                     % Generate points
                     points_tot = center + d * rand(2, nPoints) - d/2;
                     % Determining points inside the ellipse
@@ -221,17 +221,30 @@ while (mc - not_feasible) <= MC
                     points_tot(:, pointsInEllipse+1 : pointsInEllipse+nSel) = selected;
                     pointsInEllipse = pointsInEllipse + nSel;
                 end
-                % Plot Elipse for debug
-                figure
-                hold on
-                plot(x_ellipse, y_ellipse, 'b')
-                plot(x_est(1,end), x_est(2,end), 'rx', 'MarkerSize',15)
-                if size(x_est,2) > 1
-                    plot(x_est(1,end-1), x_est(2,end-1), 'kx','MarkerSize',15)
-                end
-                plot(x_pred(1), x_pred(2), 'ro', 'MarkerSize',15)
-                plot(points_tot(1,:), points_tot(2,:),'g*')
+                % Add GTRS estimate to the elipse as a point
+                points_tot(:,end) = x_est_GTRS(:,end);
 
+                % Plot Elipse for debug
+                % figure
+                % hold on
+                % plot(x_ellipse, y_ellipse, 'b')
+                % plot(x_est(1,end), x_est(2,end), 'rx', 'MarkerSize',15)
+                % if size(x_est,2) > 1
+                %     plot(x_est(1,end-1), x_est(2,end-1), 'kx','MarkerSize',15)
+                % end
+                % plot(x_pred(1), x_pred(2), 'ro', 'MarkerSize',15)
+                % plot(points_tot(1,:), points_tot(2,:),'g*')
+
+                % Analize points in Elipse and remove the ones outside the
+                % scenario (in the case that part of the elipse is outside
+                % the scenario, for instace when the estimate is near the borders
+                indexes_to_remove = [];
+                for index = 1 : 1 : size(points_tot, 2)
+                    if points_tot(1, index) < 0 || points_tot(1, index) > Border || points_tot(2, index) < 0 || points_tot(2, index) > Border
+                        indexes_to_remove = [indexes_to_remove; index];
+                    end
+                end
+                points_tot(:,indexes_to_remove) = [];
                 % After Fireworks use ML to find the min value of the nPoints
                 x_est(:, qq) = MaximumLikelihood(points_tot, a_i, d_i);
             end
@@ -257,7 +270,7 @@ while (mc - not_feasible) <= MC
             %- Move Target using velocity -%
             %------------------------------%
             % Compute velocity using azimute to destination
-            azimute = atan2(x_destination(2, ww)- x_est(2,qq), x_destination(1, ww) - x_est(1,qq));
+            azimute = atan2(x_destination(2, ww)- x_est(2,end), x_destination(1, ww) - x_est(1,end));
             uav_velocity = [cos(azimute); sin(azimute)] * moving_step;
             % Compute velocity using the velocity function
             %uav_velocity = velocity(x_est(1:2,qq),x_destination(1:2,ww));
