@@ -1,4 +1,4 @@
-function [d_i, d_i_clean] = getMeasurments(x_true, a_i, N, K, sigma, obstacles, std_obstacle, delta, safety_distance)
+function [d_i, d_ik, d_i_clean] = getMeasurments(x_true, a_i, N, K, sigma, obstacles, std_obstacle, delta, safety_distance)
     %---------------------------------------------------------------------
     % Compute RSS
     %---------------------------------------------------------------------

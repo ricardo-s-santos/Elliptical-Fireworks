@@ -8,6 +8,8 @@
 %===========================================================
 % TODO:
 % 1 - Ver grossura dos obstáculos?
+% 2 - Comparar distâncias previstas com as medidas e ver se ficam dentro de 2
+% ou 3 STDs das previstas
 %===========================================================
 
 clear variables
@@ -84,11 +86,16 @@ while (mc - not_feasible) <= MC
             %----------------------------------------------%
             x = x_true(:, end);
             % Measurements with influence of objects
-            [d_i, d_i_clean] = getMeasurments(x_true(:,end),a_i, N, K, sigma_i, obstacles, std_obstacle, delta, safety_distance);
-
+            [d_i, d_ik, d_i_clean] = getMeasurments(x_true(:,end),a_i, N, K, sigma_i, obstacles, std_obstacle, delta, safety_distance);
+            d_i_all = d_i;
             % Measurements without influence of objects
             %d_i = d_i_clean;
 
+            % Clean NLOS measurments
+            if qq > 1
+                d_i(NLOS_identification) = d_i(NLOS_identification) - delta_i_hat(NLOS_identification); % Increment values at specific indices
+            end
+            
             %----------------------------%
             %- GTRS position estimation -%
             %----------------------------%
@@ -240,7 +247,8 @@ while (mc - not_feasible) <= MC
                 % the scenario, for instace when the estimate is near the borders
                 indexes_to_remove = [];
                 for index = 1 : 1 : size(points_tot, 2)
-                    if points_tot(1, index) < 0 || points_tot(1, index) > Border || points_tot(2, index) < 0 || points_tot(2, index) > Border
+                    % Pontos abaixo do threshold
+                    if points_tot(1, index) < safety_distance || points_tot(1, index) > Border || points_tot(2, index) < safety_distance || points_tot(2, index) > Border
                         indexes_to_remove = [indexes_to_remove; index];
                     end
                 end
@@ -248,23 +256,28 @@ while (mc - not_feasible) <= MC
                 % After Fireworks use ML to find the min value of the nPoints
                 x_est(:, qq) = MaximumLikelihood(points_tot, a_i, d_i);
             end
+            
+            %--------------------%
+            %- Check NLOS links -%
+            %--------------------%
+            % Estimate delta and std
+            delta_i_hat = sum(d_ik - sqrt((x_est(1,end) - a_i(1,:)).^2 + (x_est(2,end) - a_i(2,:)).^2)', 2) / K;
+            sigma_hat = sqrt(sum(sum((d_ik - sqrt((x_est(1) - a_i(1,:)).^2 + (x_est(2) - a_i(2,:)).^2)' - delta_i_hat).^2, 2) / (N * K - 1)));
+            % Predict distances using x_pred
+            d_i_pred = sqrt((x_state(1,end) - a_i(1,:)).^2 + (x_state(2,end) - a_i(2,:)).^2)';
+            % Compare measured distances with predicted and check if they
+            % are in the range of 2 or 3 sigma_hat
+            d_i_compare = abs(d_i_all - d_i_pred);
+            NLOS_identification = find((d_i_compare(:,end) > (sigma_hat)) == 1);
 
-            %----------------------------------------%
-            %- Compute NLOS links probability        -%
-            %----------------------------------------%
-            % % Error between the true and measured distance
+            % Error between the true and measured distance
             % e_i = abs(sqrt((x_est(1,end) - a_i(1,:)).^2 + (x_est(2,end) - a_i(2,:)).^2 )' - d_i);
-            % % Probability of a link being NLOS
+            % Probability of a link being NLOS
             % p_i = e_i./sum(e_i);
             % % Ideal 1/N + sigma
             % NLOS_threshold = 1/N + sigma_i;
-            % % Comparar dois vetores, se > NLOS, < LOS
+            % Comparar dois vetores, se > NLOS, < LOS
             % identification = find(p_i(:,end) > NLOS_threshold == 1);
-            %
-            % figure
-            % plotScenario(obstacles, Border, Border, a_i)
-            % plot(x_destination(1,:), x_destination(2,:), 'x', 'Linewidth', 2.5)
-            % plot(x_est(1,end), x_est(2,end), 'x', 'MarkerSize', 10)
 
             %------------------------------%
             %- Move Target using velocity -%
