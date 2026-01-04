@@ -16,7 +16,7 @@ function [x_est] = fireworks(nPoints, x_pred, x_est_GTRS, a_i, d_i, safety_dista
     if d ~= 0
         %------------------------------------------------------------%
         %- Generate points inside ellipse using a circle with radius %
-        % 1 that is then transformed in an ellipse                  -%
+        % 1 that is then transformed in to the desierd ellipse      -%
         %------------------------------------------------------------%
         angle = 2 * pi * rand(1,nPoints); % [0, 2 * pi]
         radius = sqrt(rand(1, nPoints));   
