@@ -10,6 +10,13 @@
 % 1 - Ver grossura dos obstáculos?
 % 2 - Comparar distâncias previstas com as medidas e ver se ficam dentro de 2
 % ou 3 STDs das previstas
+
+% X_est_GTRS pode não estar dentro de elipse
+%===========================================================
+
+%===========================================================
+% Comments:
+% Quando qq = 2 x_pred é igual a x_est. Por isso elipse não funciona
 %===========================================================
 
 clear variables
@@ -25,7 +32,7 @@ Border = 10; % Length of volume of interest
 sigma_i = 1; % Noise STD in for distance measurements in meters
 moving_step = 0.5; % Step used for moving the UAV
 nPoints = 1e3; % Number of points inside the elipse
-delta = 1; % Object bias
+delta = 0.5; % Object bias
 std_obstacle = delta / 10; % Object standard deviation
 safety_distance = 0.5; % Safety distance to avoid crashing to the walls
 stop_threshold = 1; % Distance to reach the destinations
@@ -54,7 +61,7 @@ Q = q * [[(delta_t^3)/3, 0, (delta_t^2)/2, 0];
     ];
 
 % Read waypoints from file
-x_destination = csvread('Path.txt')';
+x_destination = readmatrix('Path.txt')';
 N_dest = size(x_destination,2); % Number of destinations
 
 % Metrics variables
@@ -76,7 +83,9 @@ while (mc - not_feasible) <= MC
     ww = 1;
     x_true = [1; 1];
     x_est = zeros(2,1);
+    x_est_GTRS = zeros(2,1);
     x_state = zeros(4,1);
+    NLOS_identification = [];
 
     while ww <= N_dest
         RMSE_goal = [];
@@ -92,7 +101,7 @@ while (mc - not_feasible) <= MC
             %d_i = d_i_clean;
 
             % Clean NLOS measurments
-            if qq > 1
+            if ~isempty(NLOS_identification)
                 d_i(NLOS_identification) = d_i(NLOS_identification) - delta_i_hat(NLOS_identification); % Increment values at specific indices
             end
             
@@ -147,6 +156,7 @@ while (mc - not_feasible) <= MC
                 elseif x_est(2,end) > Border
                    x_est(2,end) = Border - safety_distance;
                 end
+                x_est_GTRS(:, qq) = x_est(:, qq);
                 x_state(:,qq) = [x_est(:,qq); 0; 0]; % Initial target estimation obtained by solving the localization problem
                 P = eye(4);
                 a_i = [[0; 0], [Border; Border], [0; Border],[Border;0], [Border/2; 0], [Border/2; Border], [0; Border/2], [Border; Border/2]];
@@ -169,7 +179,7 @@ while (mc - not_feasible) <= MC
                 f_track = [zeros(4,1); -1/2];
                 A_track = W_track * A1_track;
                 b_track = W_track * b1_track;
-                eigen_values = eig((A_track'*A_track)^(1/2) \ D_track / (A_track'*A_track)^(1/2));
+                eigen_values = eig((A_track' * A_track)^(1/2) \ D_track / (A_track' * A_track)^(1/2));
                 eig_1 = max(eigen_values);
                 min_lim = -1/eig_1; % Lower limit for the considered interval
                 lambda_track = bisection_fun(min_lim, max_lim, tol, N_iter, A_track, D_track, b_track, f_track); % I am calling the bisection function
@@ -184,77 +194,14 @@ while (mc - not_feasible) <= MC
                     y_hat_track(2,end) = Border - safety_distance;
                 end
                 x_est_GTRS(:, qq) = y_hat_track(1:size(x,1),1);
+                % x_state is the target state (Position and velocity)
                 x_state(:,qq) = real(y_hat_track(1:size(x_state,1)));
                 P = (x_state(:,qq) - x_state(:,qq-1)) * (x_state(:,qq) - x_state(:,qq-1))';
 
                 %------------------------------------------------%
                 %- Position estimate improvement with Fireworks -%
                 %------------------------------------------------%
-                % Form elipse
-                theta = atan2(x_pred(2) - x_est_GTRS(2,end), x_pred(1) - x_est_GTRS(1,end)); % Computing the angle of movement
-                center = x_pred(1:2,end); % Center of the ellipse
-                % Minor axis length - half of the distance bewteen x_pred
-                % and current x_est
-                r_max = norm(x_pred(1:2) - x_est_GTRS(:,end)) / 2;
-                % Major axis length- half of the distance bewteen x_pred
-                % and prior x_est
-                d = norm(x_pred(1:2) - x_est_GTRS(:,end-1)) / 2; 
-                tt = 0 : pi/100 : 2 * pi;
-                x_ellipse = center(1) + d/2 * cos(tt) * cos(theta) - r_max/2 * sin(tt) * sin(theta);
-                y_ellipse = center(2) + r_max/2 * sin(tt) * cos(theta) + d/2 * cos(tt) * sin(theta);
-
-                % Generate nPoints inside the elipse and save in nPoints
-                points_tot = zeros(2, nPoints);
-                pointsInEllipse = 0; % Counter of points already in the elipse
-                while pointsInEllipse < nPoints - 1 % Last position is GTRS estimate
-                    % Generate points
-                    points_tot = center + d * rand(2, nPoints) - d/2;
-                    % Determining points inside the ellipse
-                    inEllipse = ((points_tot(1,:) - center(1)) * cos(theta) + (points_tot(2,:) - center(2)) ...
-                        * sin(theta)).^2/(d/2)^2 + (-(points_tot(1,:)-center(1)) * sin(theta) + (points_tot(2,:) - center(2)) ...
-                        * cos(theta)).^2/(r_max/2)^2 <= 1;
-                    % Select points inside elipse
-                    selected = points_tot(:, inEllipse);
-                    % Compute number of points inside elipse
-                    nSel = size(selected, 2);
-                    % Compute how many points are left to fill the elipse
-                    remaining = nPoints - pointsInEllipse;
-                    % Select only necessary points
-                    if nSel > remaining
-                        selected = selected(:,1:remaining);
-                        nSel = remaining;
-                    end
-                    % Save the selected points in points_tot
-                    points_tot(:, pointsInEllipse+1 : pointsInEllipse+nSel) = selected;
-                    pointsInEllipse = pointsInEllipse + nSel;
-                end
-                % Add GTRS estimate to the elipse as a point
-                points_tot(:,end) = x_est_GTRS(:,end);
-
-                % Plot Elipse for debug
-                % figure
-                % hold on
-                % plot(x_ellipse, y_ellipse, 'b')
-                % plot(x_est(1,end), x_est(2,end), 'rx', 'MarkerSize',15)
-                % if size(x_est,2) > 1
-                %     plot(x_est(1,end-1), x_est(2,end-1), 'kx','MarkerSize',15)
-                % end
-                % plot(x_pred(1), x_pred(2), 'ro', 'MarkerSize',15)
-                % plot(points_tot(1,:), points_tot(2,:),'g*')
-
-                % Analize points in Elipse and remove the ones outside the
-                % scenario (in the case that part of the elipse is outside
-                % the scenario, for instace when the estimate is near the borders
-                indexes_to_remove = [];
-                for index = 1 : 1 : size(points_tot, 2)
-                    % Pontos abaixo do threshold
-                    if points_tot(1, index) < safety_distance || points_tot(1, index) > Border || points_tot(2, index) < safety_distance || points_tot(2, index) > Border
-                        indexes_to_remove = [indexes_to_remove; index];
-                    end
-                end
-                points_tot(:,indexes_to_remove) = [];
-                % After Fireworks use ML to find the min value of the nPoints
-                x_est(:, qq) = MaximumLikelihood(points_tot, a_i, d_i);
+                x_est(:, qq) = fireworks(nPoints,x_pred, x_est_GTRS, a_i, d_i, safety_distance, Border);
             end
             
             %--------------------%
@@ -262,13 +209,14 @@ while (mc - not_feasible) <= MC
             %--------------------%
             % Estimate delta and std
             delta_i_hat = sum(d_ik - sqrt((x_est(1,end) - a_i(1,:)).^2 + (x_est(2,end) - a_i(2,:)).^2)', 2) / K;
-            sigma_hat = sqrt(sum(sum((d_ik - sqrt((x_est(1) - a_i(1,:)).^2 + (x_est(2) - a_i(2,:)).^2)' - delta_i_hat).^2, 2) / (N * K - 1)));
+            sigma_hat = sqrt(sum(sum((d_ik - sqrt((x_est(1,end) - a_i(1,:)).^2 + (x_est(2) - a_i(2,:)).^2)' - delta_i_hat).^2, 2) / (N * K - 1)));
             % Predict distances using x_pred
             d_i_pred = sqrt((x_state(1,end) - a_i(1,:)).^2 + (x_state(2,end) - a_i(2,:)).^2)';
             % Compare measured distances with predicted and check if they
             % are in the range of 2 or 3 sigma_hat
             d_i_compare = abs(d_i_all - d_i_pred);
-            NLOS_identification = find((d_i_compare(:,end) > (sigma_hat)) == 1);
+            %NLOS_identification = find(d_i_compare(:,end) > sigma_hat);
+            NLOS_identification = find(delta_i_hat(:,end) > sigma_hat);
 
             % Error between the true and measured distance
             % e_i = abs(sqrt((x_est(1,end) - a_i(1,:)).^2 + (x_est(2,end) - a_i(2,:)).^2 )' - d_i);
@@ -311,7 +259,7 @@ while (mc - not_feasible) <= MC
     mc = mc + 1;
 end % while (mc - not_feasible) <= MC
 
-RMSE = [RMSE, sqrt(RMSE_i/MC)]
+RMSE = [RMSE, sqrt(RMSE_i/MC)];
 BIAS = [BIAS, norm( BIAS_i/MC, 1 )];
 CDF = [CDF, CDF_i];
 % [h,stats] = cdfplot(CDF(:,end)); % Plots the CDF and gives stats
