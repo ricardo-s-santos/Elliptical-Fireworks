@@ -16,12 +16,14 @@ function [x_est] = fireworks(nPoints, x_pred, x_est_GTRS, a_i, d_i, safety_dista
     if d ~= 0
         %------------------------------------------------------------%
         %- Generate points inside ellipse using a circle with radius %
-        % 1 that is then transformed in to the desierd ellipse      -%
+        % 1 entered in [0,0] that is then transformed                %
+        % into the desierd ellipse                                  -%
         %------------------------------------------------------------%
+        % Generate points inside circle in polar coordinates
         angle = 2 * pi * rand(1,nPoints); % [0, 2 * pi]
-        radius = sqrt(rand(1, nPoints));   
+        radius = sqrt(rand(1, nPoints)); % sqrt for uniform distribution  
 
-        % Circle with radius 1 centered in [0,0]
+        % Convert generated points from polar coordinates to Cartesian
         x_circle = radius .* cos(angle);
         y_circle = radius .* sin(angle);   
 
@@ -100,4 +102,28 @@ function [x_est] = fireworks(nPoints, x_pred, x_est_GTRS, a_i, d_i, safety_dista
     else
         x_est = x_est_GTRS(:,end);
     end
+end
+
+function x_est = MaximumLikelihood(points_tot, a_i, d_i)
+    % This function implements the Maximum Likelihood function
+    N = size(a_i,2); % Number of reference points
+    min_ml_value = 10^9; % Minimum value for the ML function
+    min_pos = [1000; 1000]; % Position of the minimum value
+    % Foreach point inside the elipse compute ML value
+    for point = 1 : 1 : size(points_tot,2)
+        x = [points_tot(1,point); points_tot(2,point)];
+        sum_ml_values = 0;
+        % Maximum Likelihood function
+        for j = 1 : 1 : N % For each reference point compute ML value
+            new_ml_value = ((d_i(j) - norm(x - a_i(:,j)))^2);
+            sum_ml_values = sum_ml_values + new_ml_value;
+        end
+        % Update minimum value and point position
+        if sum_ml_values < min_ml_value
+            min_ml_value = sum_ml_values;
+            min_pos = x;
+        end
+    end
+    % Estimated position
+    x_est = min_pos;
 end
