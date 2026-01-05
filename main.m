@@ -1,13 +1,13 @@
 %===========================================================
 % Elliptical Fireworks
-% December 2025
-% v1.0 - Initial Implementation
-% © 2025 COPELABS - Universidade Lusófona CUL
+% January 2026
+% v1.0.1 - Initial Implementation
+% © 2026 COPELABS - Universidade Lusófona CUL
 %===========================================================
 
 %===========================================================
 % TODO:
-% 1 - Ver grossura dos obstáculos?
+% 1 - Ver grossura dos obstáculos no plot?
 % 2 - Comparar distâncias previstas com as medidas e ver se ficam dentro de 2
 % ou 3 STDs das previstas
 
@@ -102,7 +102,7 @@ while (mc - not_feasible) <= MC
 
             % Clean NLOS measurments
             if ~isempty(NLOS_identification)
-                d_i(NLOS_identification) = d_i(NLOS_identification) - delta_i_hat(NLOS_identification); % Increment values at specific indices
+                d_i(NLOS_identification) = d_i(NLOS_identification) - delta_i_hat(NLOS_identification);
             end
             
             %----------------------------%
@@ -202,30 +202,32 @@ while (mc - not_feasible) <= MC
                 %- Position estimate improvement with Fireworks -%
                 %------------------------------------------------%
                 x_est(:, qq) = fireworks(nPoints,x_pred, x_est_GTRS, a_i, d_i, safety_distance, Border);
+                %x_est(:, qq) = x_est_GTRS(:,end);
             end
             
             %--------------------%
             %- Check NLOS links -%
             %--------------------%
             % Estimate delta and std
-            delta_i_hat = sum(d_ik - sqrt((x_est(1,end) - a_i(1,:)).^2 + (x_est(2,end) - a_i(2,:)).^2)', 2) / K;
+            delta_i_hat = abs(sum(d_ik - sqrt((x_est(1,end) - a_i(1,:)).^2 + (x_est(2,end) - a_i(2,:)).^2)', 2) / K);
             sigma_hat = sqrt(sum(sum((d_ik - sqrt((x_est(1,end) - a_i(1,:)).^2 + (x_est(2) - a_i(2,:)).^2)' - delta_i_hat).^2, 2) / (N * K - 1)));
-            % Predict distances using x_pred
-            d_i_pred = sqrt((x_state(1,end) - a_i(1,:)).^2 + (x_state(2,end) - a_i(2,:)).^2)';
+            % Predict distances using x_pred and subtract estimated delta
+            % and sigma
+            d_i_pred = sqrt((x_state(1,end) - a_i(1,:)).^2 + (x_state(2,end) - a_i(2,:)).^2)' - delta_i_hat;
             % Compare measured distances with predicted and check if they
             % are in the range of 2 or 3 sigma_hat
             d_i_compare = abs(d_i_all - d_i_pred);
             %NLOS_identification = find(d_i_compare(:,end) > sigma_hat);
-            NLOS_identification = find(delta_i_hat(:,end) > sigma_hat);
-
+            NLOS_identification = find(d_i_compare > sigma_hat);
+            
             % Error between the true and measured distance
-            % e_i = abs(sqrt((x_est(1,end) - a_i(1,:)).^2 + (x_est(2,end) - a_i(2,:)).^2 )' - d_i);
+            % e_i = abs(sqrt((x_est(1,end) - a_i(1,:)).^2 + (x_est(2,end) - a_i(2,:)).^2 )' - d_i_all);
             % Probability of a link being NLOS
             % p_i = e_i./sum(e_i);
-            % % Ideal 1/N + sigma
+            % Ideal 1/N + sigma
             % NLOS_threshold = 1/N + sigma_i;
             % Comparar dois vetores, se > NLOS, < LOS
-            % identification = find(p_i(:,end) > NLOS_threshold == 1);
+            % identification = find(p_i(:,end) > NLOS_threshold);
 
             %------------------------------%
             %- Move Target using velocity -%
