@@ -1,17 +1,16 @@
-function [x_est] = fireworks(nPoints, x_pred, x_est_GTRS, a_i, d_i, safety_distance, Border)
+function [x_est] = fireworks(nPoints, x_pred, x_est_GTRS, a_i, d_i, Border)
     % Computing the angle of movement
     theta = atan2(x_pred(2) - x_est_GTRS(2,end), x_pred(1) - x_est_GTRS(1,end)); % Computing the angle of movement
 
     % Center of the ellipse
     center = x_pred(1:2,end);
 
-    % Minor axis length - half of the distance bewteen x_pred
-    % and current x_est
-    r_max = norm(x_pred(1:2) - x_est_GTRS(:,end)) / 2;
+    % Minor axis length - distance bewteen x_pred and current x_est
+    r_max = norm(x_pred(1:2) - x_est_GTRS(:,end));
     
-    % Major axis length - half of the distance bewteen x_pred
-    % and prior x_est
-    d = norm(x_pred(1:2, end) - x_est_GTRS(:,end-1)) / 2;
+    % Major axis length - distance bewteen x_pred and prior x_est
+    d = norm(x_pred(1:2, end) - x_est_GTRS(:,end-1));
+    
     % In the second iteration x_est and x_pred are equal
     if d ~= 0
         %------------------------------------------------------------%
